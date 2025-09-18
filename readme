@@ -1,12 +1,14 @@
-executing programs and awareness of state
-
 when we first start working with gpus, we quickly become concerned with
     how do i get some code to run on it?
     how is this code interacting with the gpu?
 
-to jump off
+suppose we want to execute some code path on the gpu
+we refer to this actiona as an invocation
+this invocation may not necessarily be independent
+this invocation may be mapped to multiple lanes
+or to independent threads
+it may not guarantee forward progress at every time step
 
-we would like
+we must be aware of possible constraints before making assumptions on its behavior
 
-on the issue of getting code on to the GPU
-*we will assume that we are sticking to userspace, and would like to utilize existing API*
+*we will assume userspace, and using existing API*
