@@ -1,0 +1,12 @@
+executing programs and awareness of state
+
+when we first start working with gpus, we quickly become concerned with
+    how do i get some code to run on it?
+    how is this code interacting with the gpu?
+
+to jump off
+
+we would like
+
+on the issue of getting code on to the GPU
+*we will assume that we are sticking to userspace, and would like to utilize existing API*
