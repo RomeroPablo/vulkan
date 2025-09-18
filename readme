@@ -6,8 +6,26 @@ suppose we want to execute some code path on the gpu
     we refer to this action as an invocation
     this invocation may not necessarily be independent
     this invocation may be mapped to multiple lanes
-    or to independent threads
+        or to independent threads
     it may not guarantee forward progress at every time step
-we must be aware of possible constraints before making assumptions on its behavior
+we must be aware of possible constraints before making assumptions of its behavior
+let's consider the monolithic gpu
+
+┌───────────┐                  
+│Scalar Unit│ - for control flow, pointer arithmetic, shared instructions, etc.
+└───────────┘                  
+┌───────────┐
+│Scalar Reg.│ - register file for the SU, ~12KB
+└───────────┘
+
+we can consider the scalar unit and scalar unit register file as a shared resource within a compute unit
+    more on this later
+
+┌───────────┐
+│   SIMDx   │ - vector processor ~16 Lanes
+└───────────┘
+┌───────────┐
+│Vector Reg.│ - vector register file ~64KB :: 256 64x4 byte registers
+└───────────┘
 
 *we will assume userspace, and using existing API*
