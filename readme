@@ -3,12 +3,11 @@ when we first start working with gpus, we quickly become concerned with
     how is this code interacting with the gpu?
 
 suppose we want to execute some code path on the gpu
-we refer to this actiona as an invocation
-this invocation may not necessarily be independent
-this invocation may be mapped to multiple lanes
-or to independent threads
-it may not guarantee forward progress at every time step
-
+    we refer to this action as an invocation
+    this invocation may not necessarily be independent
+    this invocation may be mapped to multiple lanes
+    or to independent threads
+    it may not guarantee forward progress at every time step
 we must be aware of possible constraints before making assumptions on its behavior
 
 *we will assume userspace, and using existing API*
