@@ -8,7 +8,9 @@ suppose we want to execute some code path on the gpu
     this invocation may be mapped to multiple lanes
         or to independent threads
     it may not guarantee forward progress at every time step
+
 we must be aware of possible constraints before making assumptions of its behavior
+
 let's consider the monolithic gpu
 
 ┌───────────┐                  
