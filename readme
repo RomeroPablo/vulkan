@@ -59,9 +59,13 @@ thus, we have the Compute Unit
 a single simd processor in a compute unit has 16 lanes, 
 -- each of these lanes executes a synchronized vector operation (say a multiply-accumulate) on some 32 bit value
 we also refer to these as work-items, thus, 1 simd unit in a compute unit has 16 work-items 
--- and the 4 simd units in a compute unit have a total of 64 work items
-we then call this collection of 64 work items a wavefront
+we call a collection of 64 work items a wavefront
 we consider the wavefront as the atomic scheduling unit
-we can imagine our gpu dispatching 1 wavefront to 1 compute unit
+
+-- we can imagine our gpu dispatching 1 wavefront to 1 compute unit which is pinned on 1 simd unit--
+
+it is NOT the case that we map a wavefronts 64 work items to 4 simd units,
+a wave front is only mapped to ONE simd unit
+thus, it takes a simd unit 4 cycles to complete exeuction of a wavefront
 
 *we will assume userspace, and using existing API*
