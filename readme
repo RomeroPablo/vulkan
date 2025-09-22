@@ -37,14 +37,16 @@ each SIMD unit may buffer instructions for 10 wavefronts, where each wavefront i
 │ L1 Cache  │ - L1 vector data cache, ~16KB
 └───────────┘
 ┌─────────────────────────────────────────────────────┐
-│                 Local Data Share                    │ - Shared local data store, ~32 banks with conflict resolution, ~64KB
+│                 Local Data Share                    │
 └─────────────────────────────────────────────────────┘
+- Shared local data store, ~32 banks with conflict resolution, ~64KB
 
 we also have a greater write-through L2 Cache which serves as the device coherence point, and is shared by all compute units
 
 ┌───────────────────────────────────────────────────────────────────┐
-│                            Scheduler                              │ - buffers up to ~40 wavefronts == 2560 work-items
+│                            Scheduler                              │
 └───────────────────────────────────────────────────────────────────┘
+- buffers up to ~40 wavefronts == 2560 work-items
 
 from this, we have the Compute Unit
 ┌───────────────────────────────────────────────────────────────────┐
