@@ -21,7 +21,7 @@ let's consider the monolithic gpu
 we can consider the scalar unit and scalar unit register file as a shared resource within a compute unit
 
 ┌───────────┐
-│   SIMDx   │ vector processor 16 Lanes
+│   SIMDx   │ vector processor with 16 Lanes
 └───────────┘
 ┌───────────┐
 │Vector Reg.│ vector register file 64KB :: 256 64x4 byte registers
@@ -31,7 +31,7 @@ a single simd processor in a compute unit has 16 lanes,
 we also refer to these as work-items, thus, 1 simd unit in a compute unit has 16 work-items 
 we call a collection of 64 work items a wavefront
 we consider the wavefront as the atomic scheduling unit
-each SIMD unit may buffer instructions for 10 wavefronts
+each SIMD unit may buffer instructions for 10 wavefronts -- more on this later
 
 ┌───────────┐
 │ L1 Cache  │ L1 vector data cache, ~16KB
@@ -44,8 +44,14 @@ Shared local data store, 32 banks with conflict resolution, totaling 64KB
 ┌───────────────────────────────────────────────────────────────────┐
 │                            Scheduler                              │
 └───────────────────────────────────────────────────────────────────┘
-on each clock cycle,
 buffers up to 40 wavefronts == 2560 work-items
+
+-- we can imagine our gpu dispatching 1 wavefront to 1 compute unit which is pinned on 1 simd unit--
+
+it is NOT the case that we map a wavefronts 64 work items to 4 simd units,
+a wave front is only mapped to ONE simd unit
+thus, it takes a simd unit 4 cycles to complete exeuction of a wavefront
+
 
 thus, we have the Compute Unit
 ┌───────────────────────────────────────────────────────────────────┐
@@ -60,11 +66,4 @@ thus, we have the Compute Unit
 ┌───────────┐ ┌───────────┐ ┌───────────┐ ┌───────────┐ ┌───────────┐
 │Scalar Reg.│ │Vector Reg.│ │Vector Reg.│ │Vector Reg.│ │Vector Reg.│
 └───────────┘ └───────────┘ └───────────┘ └───────────┘ └───────────┘
-
--- we can imagine our gpu dispatching 1 wavefront to 1 compute unit which is pinned on 1 simd unit--
-
-it is NOT the case that we map a wavefronts 64 work items to 4 simd units,
-a wave front is only mapped to ONE simd unit
-thus, it takes a simd unit 4 cycles to complete exeuction of a wavefront
-
 *we will assume userspace, and using existing API*
