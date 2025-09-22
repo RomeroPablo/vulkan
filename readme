@@ -14,41 +14,37 @@ we must be aware of possible constraints before making assumptions of its behavi
 let's consider the monolithic gpu
 
 ┌───────────┐                  
-│Scalar Unit│ - for control flow, pointer/scalar arithmetic, shared operations, etc.
+│Scalar Unit│ for control flow, pointer/scalar arithmetic, shared operations, etc.
 └───────────┘                  
 ┌───────────┐
-│Scalar Reg.│ - register file for the scalar unit, ~12KB
+│Scalar Reg.│ register file for the scalar unit, ~12KB
 └───────────┘
-
 we can consider the scalar unit and scalar unit register file as a shared resource within a compute unit
     more on this later
 
 ┌───────────┐
-│   SIMDx   │ - vector processor ~16 Lanes
+│   SIMDx   │ vector processor ~16 Lanes
 └───────────┘
 ┌───────────┐
-│Vector Reg.│ - vector register file ~64KB :: 256 64x4 byte registers
+│Vector Reg.│ vector register file ~64KB :: 256 64x4 byte registers
 └───────────┘
-
 each SIMD unit may buffer instructions for 10 wavefronts, where each wavefront is particular to a SIMD unit in a compute unit
     more on this later
 
 ┌───────────┐
-│ L1 Cache  │ - L1 vector data cache, ~16KB
+│ L1 Cache  │ L1 vector data cache, ~16KB
 └───────────┘
 ┌─────────────────────────────────────────────────────┐
 │                 Local Data Share                    │
 └─────────────────────────────────────────────────────┘
-- Shared local data store, ~32 banks with conflict resolution, ~64KB
-
-we also have a greater write-through L2 Cache which serves as the device coherence point, and is shared by all compute units
+Shared local data store, ~32 banks with conflict resolution, ~64KB
 
 ┌───────────────────────────────────────────────────────────────────┐
 │                            Scheduler                              │
 └───────────────────────────────────────────────────────────────────┘
-- buffers up to ~40 wavefronts == 2560 work-items
+buffers up to ~40 wavefronts == 2560 work-items
 
-from this, we have the Compute Unit
+thus, we have the Compute Unit
 ┌───────────────────────────────────────────────────────────────────┐
 │                           Scheduler                               │
 └───────────────────────────────────────────────────────────────────┘
