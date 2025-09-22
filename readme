@@ -6,7 +6,6 @@ suppose we want to execute some code path on the gpu
     we refer to this action as an invocation
     this invocation may not necessarily be independent
     this invocation may be mapped to multiple lanes
-        or to independent threads
     it may not guarantee forward progress at every time step
 
 we must be aware of possible constraints before making assumptions of its behavior
@@ -20,7 +19,6 @@ let's consider the monolithic gpu
 │Scalar Reg.│ register file for the scalar unit, ~12KB
 └───────────┘
 we can consider the scalar unit and scalar unit register file as a shared resource within a compute unit
-    more on this later
 
 ┌───────────┐
 │   SIMDx   │ vector processor ~16 Lanes
@@ -28,8 +26,8 @@ we can consider the scalar unit and scalar unit register file as a shared resour
 ┌───────────┐
 │Vector Reg.│ vector register file ~64KB :: 256 64x4 byte registers
 └───────────┘
-each SIMD unit may buffer instructions for 10 wavefronts, where each wavefront is particular to a SIMD unit in a compute unit
-    more on this later
+each SIMD unit may buffer instructions for 10 wavefronts
+--where each wavefront is particular to a SIMD unit in a compute unit
 
 ┌───────────┐
 │ L1 Cache  │ L1 vector data cache, ~16KB
@@ -57,5 +55,13 @@ thus, we have the Compute Unit
 ┌───────────┐ ┌───────────┐ ┌───────────┐ ┌───────────┐ ┌───────────┐
 │Scalar Reg.│ │Vector Reg.│ │Vector Reg.│ │Vector Reg.│ │Vector Reg.│
 └───────────┘ └───────────┘ └───────────┘ └───────────┘ └───────────┘
+
+a single simd processor in a compute unit has 16 lanes, 
+-- each of these lanes executes a synchronized vector operation (say a multiply-accumulate) on some 32 bit value
+we also refer to these as work-items, thus, 1 simd unit in a compute unit has 16 work-items 
+-- and the 4 simd units in a compute unit have a total of 64 work items
+we then call this collection of 64 work items a wavefront
+we consider the wavefront as the atomic scheduling unit
+we can imagine our gpu dispatching 1 wavefront to 1 compute unit
 
 *we will assume userspace, and using existing API*
