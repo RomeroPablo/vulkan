@@ -14,10 +14,10 @@ we must be aware of possible constraints before making assumptions of its behavi
 let's consider the monolithic gpu
 
 ┌───────────┐                  
-│Scalar Unit│ - for control flow, pointer arithmetic, shared instructions, etc.
+│Scalar Unit│ - for control flow, pointer/scalar arithmetic, shared operations, etc.
 └───────────┘                  
 ┌───────────┐
-│Scalar Reg.│ - register file for the SU, ~12KB
+│Scalar Reg.│ - register file for the scalar unit, ~12KB
 └───────────┘
 
 we can consider the scalar unit and scalar unit register file as a shared resource within a compute unit
@@ -29,5 +29,35 @@ we can consider the scalar unit and scalar unit register file as a shared resour
 ┌───────────┐
 │Vector Reg.│ - vector register file ~64KB :: 256 64x4 byte registers
 └───────────┘
+
+each SIMD unit may buffer instructions for 10 wavefronts, where each wavefront is particular to a SIMD unit in a compute unit
+    more on this later
+
+┌───────────┐
+│ L1 Cache  │ - L1 vector data cache, ~16KB
+└───────────┘
+┌─────────────────────────────────────────────────────┐
+│                 Local Data Share                    │ - Shared local data store, ~32 banks with conflict resolution, ~64KB
+└─────────────────────────────────────────────────────┘
+
+we also have a greater write-through L2 Cache which serves as the device coherence point, and is shared by all compute units
+
+┌───────────────────────────────────────────────────────────────────┐
+│                            Scheduler                              │ - buffers up to ~40 wavefronts == 2560 work-items
+└───────────────────────────────────────────────────────────────────┘
+
+from this, we have the Compute Unit
+┌───────────────────────────────────────────────────────────────────┐
+│                           Scheduler                               │
+└───────────────────────────────────────────────────────────────────┘
+┌───────────┐ ┌─────────────────────────────────────────────────────┐
+│ L1 Cache  │ │                 Local Data Share                    │
+└───────────┘ └─────────────────────────────────────────────────────┘
+┌───────────┐ ┌───────────┐ ┌───────────┐ ┌───────────┐ ┌───────────┐
+│Scalar Unit│ │   SIMD0   │ │   SIMD1   │ │   SIMD2   │ │   SIMD3   │
+└───────────┘ └───────────┘ └───────────┘ └───────────┘ └───────────┘
+┌───────────┐ ┌───────────┐ ┌───────────┐ ┌───────────┐ ┌───────────┐
+│Scalar Reg.│ │Vector Reg.│ │Vector Reg.│ │Vector Reg.│ │Vector Reg.│
+└───────────┘ └───────────┘ └───────────┘ └───────────┘ └───────────┘
 
 *we will assume userspace, and using existing API*
