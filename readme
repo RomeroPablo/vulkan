@@ -51,9 +51,9 @@ buffers up to 40 wavefronts == 2560 work-items
 it is NOT the case that we map a wavefronts 64 work items to 4 simd units,
 a wave front is only mapped to ONE simd unit
 thus, it takes a simd unit 4 cycles to complete exeuction of a wavefront
+only in aggregate can we consider the compute unit operating at 64 FP32 ops/cycle
 
-
-thus, we have the Compute Unit
+thus we have the Compute Unit
 ┌───────────────────────────────────────────────────────────────────┐
 │                           Scheduler                               │
 └───────────────────────────────────────────────────────────────────┘
@@ -66,4 +66,5 @@ thus, we have the Compute Unit
 ┌───────────┐ ┌───────────┐ ┌───────────┐ ┌───────────┐ ┌───────────┐
 │Scalar Reg.│ │Vector Reg.│ │Vector Reg.│ │Vector Reg.│ │Vector Reg.│
 └───────────┘ └───────────┘ └───────────┘ └───────────┘ └───────────┘
+
 *we will assume userspace, and using existing API*
