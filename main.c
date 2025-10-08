@@ -270,7 +270,7 @@ void createSurface(struct VkState* state){
     assert(presentSupport);
 };
 
-int inline clamp(int input, int min, int max){
+static inline int clamp(int input, int min, int max){
     return input < min ? min : (input > max ? max : input);
 }
 
