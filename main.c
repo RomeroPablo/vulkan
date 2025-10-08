@@ -26,7 +26,22 @@ static VKAPI_ATTR VkBool32 VKAPI_CALL debugCallback(
     return VK_FALSE;
 }
 
-void setupDebugMessenger(){
+VkResult CreateDebugUtilsMessengerEXT(VkInstance instance, 
+        const VkDebugUtilsMessengerCreateInfoEXT* pCreateInfo, 
+        const VkAllocationCallbacks* pAllocator, 
+        VkDebugUtilsMessengerEXT* pDebugMessenger){
+    PFN_vkCreateDebugUtilsMessengerEXT func = 
+        (PFN_vkCreateDebugUtilsMessengerEXT) 
+            vkGetInstanceProcAddr(instance, "vkCreateDebugUtilsMessengerEXT");
+
+    if(func != NULL){
+        return func(instance, pCreateInfo, pAllocator, pDebugMessenger);
+    } else {
+        return VK_ERROR_EXTENSION_NOT_PRESENT;
+    }
+}
+
+void setupDebugMessenger(struct VkState* state){
     VkDebugUtilsMessengerCreateInfoEXT createInfo = {
         .sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT,
 
@@ -40,13 +55,18 @@ void setupDebugMessenger(){
         .pfnUserCallback = debugCallback,
         .pUserData = NULL
     };
+
+    assert(CreateDebugUtilsMessengerEXT(state->instance, &createInfo, 
+                NULL, &state->debugMessenger) == VK_SUCCESS);
 }
 
-VkResult CreateDebugUtilsMessengerEXT(VkInstance instance, 
-        const VkDebugUtilsMessengerCreateInfoEXT* pCreateInfo, 
-        const VkAllocationCallbacks* pAllocator, 
-        VkDebugUtilsMessengerEXT* pDebugMessenger){
+void DestroyDebugUtilsMessengerEXT(VkInstance instance, VkDebugUtilsMessengerEXT debugMessenger,
+        const VkAllocationCallbacks* pAllocator){
+   PFN_vkDestroyDebugUtilsMessengerEXT func = 
+       (PFN_vkDestroyDebugUtilsMessengerEXT)
+       vkGetInstanceProcAddr(instance, "vkDestroyDebugUtilsMessengerEXT");
 
+    if (func != NULL) { func(instance, debugMessenger, pAllocator); }
 }
 
 bool checkValidationLayerSupport(){
@@ -74,7 +94,8 @@ void initWindow(struct VkState* state){
     state->resolution.height = 600;
     glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
     glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE);
-    state->window = glfwCreateWindow(state->resolution.width, state->resolution.height, "Vulkan", NULL, NULL);
+    state->window = glfwCreateWindow(state->resolution.width, 
+            state->resolution.height, "Vulkan", NULL, NULL);
     assert(state->window);
 }
 
@@ -129,6 +150,8 @@ void renderLoop(struct VkState* state){
 }
 
 void cleanup(struct VkState* state){
+    DestroyDebugUtilsMessengerEXT(state->instance, state->debugMessenger, NULL);
+
     vkDestroyInstance(state->instance, NULL);
 
     glfwDestroyWindow(state->window);
@@ -143,6 +166,7 @@ int main(void){
 
     initWindow(&state);
     createInstance(&state);
+    setupDebugMessenger(&state);
 
     renderLoop(&state);
     cleanup(&state);
