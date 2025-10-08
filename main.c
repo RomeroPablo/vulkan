@@ -35,6 +35,8 @@ struct VkState{
         VkPresentModeKHR presentMode;
     }swapchainInfo;
     VkExtent2D extent;
+    uint32_t imageCount;
+    VkSwapchainKHR swapchain;
 
     VkDebugUtilsMessengerEXT debugMessenger;
 };
@@ -275,6 +277,7 @@ static inline int clamp(int input, int min, int max){
 }
 
 void createSwapChain(struct VkState* state){
+    printf("[+] Creating Swapchain\n");
     vkGetPhysicalDeviceSurfaceCapabilitiesKHR(state->physicalDevice, state->surface, &state->swapchainInfo.capabilities);
 
     uint32_t formatCount = 0;
@@ -314,6 +317,28 @@ void createSwapChain(struct VkState* state){
         state->extent.height = clamp(state->extent.height, 
                 state->swapchainInfo.capabilities.minImageExtent.height, state->swapchainInfo.capabilities.maxImageExtent.height);
     }
+    state->imageCount = state->swapchainInfo.capabilities.minImageCount + 1;
+
+    VkSwapchainCreateInfoKHR createInfo = {
+        .sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR,
+        .surface = state->surface,
+        .minImageCount = state->swapchainInfo.capabilities.minImageCount,
+        .imageFormat = state->swapchainInfo.format.format,
+        .imageColorSpace = state->swapchainInfo.format.colorSpace,
+        .imageExtent = state->extent,
+        .imageArrayLayers = 1,
+        .imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
+        .imageSharingMode = VK_SHARING_MODE_EXCLUSIVE,
+        .queueFamilyIndexCount = state->queueFamilyIndices.graphicsFamily,
+        .pQueueFamilyIndices = NULL,
+        .preTransform = state->swapchainInfo.capabilities.currentTransform,
+        .compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR,
+        .presentMode = state->swapchainInfo.presentMode,
+        .clipped = VK_TRUE,
+        .oldSwapchain = VK_NULL_HANDLE
+    };
+
+    assert(vkCreateSwapchainKHR(state->device, &createInfo, NULL, &state->swapchain) == VK_SUCCESS);
 }
 
 void renderLoop(struct VkState* state){
@@ -345,6 +370,7 @@ int main(void){
 void cleanup(struct VkState* state){
     printf("[!] Cleaning up Instance\n");
     DestroyDebugUtilsMessengerEXT(state->instance, state->debugMessenger, NULL);
+    vkDestroySwapchainKHR(state->device, state->swapchain, NULL);
     vkDestroySurfaceKHR(state->instance, state->surface, NULL);
     vkDestroyDevice(state->device, NULL);
     vkDestroyInstance(state->instance, NULL);
