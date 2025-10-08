@@ -13,8 +13,27 @@ struct VkState{
     }resolution;
     GLFWwindow* window;
     VkInstance instance;
+    VkPhysicalDevice physicalDevice;
+    VkPhysicalDeviceProperties physicalDeviceProperties;
+    VkPhysicalDeviceFeatures physicalDeviceFeatures;
+    float queuePriority;
+    struct QueueFamilyIndices{
+        uint32_t graphicsFamily;
+        uint32_t computeFamily;
+    }queueFamilyIndices;
+    struct QueueCount{
+        uint32_t graphics;
+        uint32_t compute;
+    }queueCount;
+    VkDevice device;
+    VkQueue graphicsQueue;
+    VkQueue computeQueue;
+    VkSurfaceKHR surface;
+
     VkDebugUtilsMessengerEXT debugMessenger;
 };
+
+void cleanup(struct VkState* state);
 
 static VKAPI_ATTR VkBool32 VKAPI_CALL debugCallback(
         VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity, 
@@ -42,6 +61,7 @@ VkResult CreateDebugUtilsMessengerEXT(VkInstance instance,
 }
 
 void setupDebugMessenger(struct VkState* state){
+    printf("[+] Setting up Debug Messenger\n");
     VkDebugUtilsMessengerCreateInfoEXT createInfo = {
         .sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT,
 
@@ -89,6 +109,7 @@ bool checkValidationLayerSupport(){
 }
 
 void initWindow(struct VkState* state){
+    printf("[+] Initializing Window]\n");
     glfwInit();
     state->resolution.width  = 800;
     state->resolution.height = 600;
@@ -100,6 +121,7 @@ void initWindow(struct VkState* state){
 }
 
 void createInstance(struct VkState* state){
+    printf("[+] Creating Vulkan Instance\n");
     assert(checkValidationLayerSupport);
     VkApplicationInfo appInfo = {
         .sType = VK_STRUCTURE_TYPE_APPLICATION_INFO,
@@ -143,20 +165,103 @@ void createInstance(struct VkState* state){
     assert(result == VK_SUCCESS);
 }
 
+void pickPhysicalDevice(struct VkState* state){
+    printf("[+] Picking Physical Device\n");
+    uint32_t deviceCount = 0;
+    vkEnumeratePhysicalDevices(state->instance, &deviceCount, NULL);
+    VkPhysicalDevice devices[deviceCount];
+    vkEnumeratePhysicalDevices(state->instance, &deviceCount, devices);
+    state->physicalDevice = devices[0];
+
+    vkGetPhysicalDeviceProperties(state->physicalDevice, &state->physicalDeviceProperties);
+    printf("[+] Using Device %s\n", state->physicalDeviceProperties.deviceName);
+
+    vkGetPhysicalDeviceFeatures(state->physicalDevice, &state->physicalDeviceFeatures);
+}
+
+void setupQueues(struct VkState* state){
+    printf("[+] Setting up Queues\n");
+    uint32_t queueFamilyCount = 0;
+    vkGetPhysicalDeviceQueueFamilyProperties(state->physicalDevice, &queueFamilyCount, NULL);
+    VkQueueFamilyProperties queueFamilyProperties[queueFamilyCount];
+    vkGetPhysicalDeviceQueueFamilyProperties(state->physicalDevice, &queueFamilyCount, queueFamilyProperties);
+    for(int i = 0; i < queueFamilyCount; i++){
+        if((queueFamilyProperties[i].queueFlags & VK_QUEUE_GRAPHICS_BIT)){
+            if(queueFamilyProperties[i].queueCount > state->queueCount.graphics){
+                state->queueFamilyIndices.graphicsFamily = i;
+                state->queueCount.graphics = queueFamilyProperties[i].queueCount;
+            }
+        }
+        if((queueFamilyProperties[i].queueFlags & VK_QUEUE_COMPUTE_BIT)){
+            if(queueFamilyProperties[i].queueCount > state->queueCount.compute){
+                state->queueFamilyIndices.computeFamily = i;
+                state->queueCount.compute = queueFamilyProperties[i].queueCount;
+            }
+        }
+    }
+    printf("[+] Graphics using Queue Family [ %i ] with [ %i ] queues\n", state->queueFamilyIndices.graphicsFamily, state->queueCount.graphics);
+    printf("[+] Compute using Queue Family  [ %i ] with [ %i ] queues\n", state->queueFamilyIndices.computeFamily, state->queueCount.compute);
+}
+
+void createLogicalDevice(struct VkState* state){
+    printf("[+] Creating Logical Device\n");
+    const char* validationLayer = "VK_LAYER_KHRONOS_validation";
+    VkDeviceQueueCreateInfo queueCreateInfos[2];
+    uint32_t queueCreateInfoCount = 0;
+    state->queuePriority = 1.0f;
+
+    VkDeviceQueueCreateInfo graphicsQueueCreateInfo = {
+        .sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
+        .queueFamilyIndex = state->queueFamilyIndices.graphicsFamily,
+        .queueCount = state->queueCount.graphics,
+        .pQueuePriorities = &state->queuePriority
+    };
+    queueCreateInfos[0] = graphicsQueueCreateInfo;
+    queueCreateInfoCount++;
+
+    if(state->queueFamilyIndices.computeFamily != state->queueFamilyIndices.graphicsFamily){
+        VkDeviceQueueCreateInfo computeQueueCreateInfo = {
+            .sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
+            .queueFamilyIndex = state->queueFamilyIndices.computeFamily,
+            .queueCount = state->queueCount.compute,
+            .pQueuePriorities = &state->queuePriority
+        };
+        queueCreateInfos[1] = computeQueueCreateInfo;
+        queueCreateInfoCount++;
+    }
+
+    VkPhysicalDeviceFeatures enabledFeatures = {};
+    VkDeviceCreateInfo createInfo = {
+        .sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
+        .pQueueCreateInfos = queueCreateInfos,
+        .queueCreateInfoCount = queueCreateInfoCount,
+        .pEnabledFeatures = &enabledFeatures,
+        .enabledExtensionCount = 0,
+        .ppEnabledLayerNames = &validationLayer,
+        .enabledLayerCount = 1,
+    };
+    assert(vkCreateDevice(state->physicalDevice, &createInfo, NULL, &state->device) == VK_SUCCESS);
+}
+
+void retrieveQueues(struct VkState* state){
+    printf("[+] Retrieving Queues\n");
+    vkGetDeviceQueue(state->device, state->queueFamilyIndices.graphicsFamily, 0, &state->graphicsQueue);
+    vkGetDeviceQueue(state->device, state->queueFamilyIndices.computeFamily, 0, &state->computeQueue);
+}
+
+void createSurface(struct VkState* state){
+    printf("[+] Creating Surface\n");
+    assert(glfwCreateWindowSurface(state->instance, state->window, NULL, &state->surface) == VK_SUCCESS);
+    VkBool32 presentSupport = false;
+    vkGetPhysicalDeviceSurfaceSupportKHR(state->physicalDevice, state->queueFamilyIndices.graphicsFamily, state->surface, &presentSupport);
+    assert(presentSupport);
+};
+
 void renderLoop(struct VkState* state){
+    printf("[+] Entering Render Loop\n");
     while(!glfwWindowShouldClose(state->window)){
         glfwPollEvents();
     }
-}
-
-void cleanup(struct VkState* state){
-    DestroyDebugUtilsMessengerEXT(state->instance, state->debugMessenger, NULL);
-
-    vkDestroyInstance(state->instance, NULL);
-
-    glfwDestroyWindow(state->window);
-
-    glfwTerminate();
 }
 
 int main(void){
@@ -167,7 +272,24 @@ int main(void){
     initWindow(&state);
     createInstance(&state);
     setupDebugMessenger(&state);
+    pickPhysicalDevice(&state);
+    setupQueues(&state);
+    createLogicalDevice(&state);
+    retrieveQueues(&state);
+    createSurface(&state);
 
     renderLoop(&state);
     cleanup(&state);
+}
+
+void cleanup(struct VkState* state){
+    printf("[!] Cleaning up Instance\n");
+    DestroyDebugUtilsMessengerEXT(state->instance, state->debugMessenger, NULL);
+    vkDestroySurfaceKHR(state->instance, state->surface, NULL);
+    vkDestroyDevice(state->device, NULL);
+    vkDestroyInstance(state->instance, NULL);
+
+    glfwDestroyWindow(state->window);
+
+    glfwTerminate();
 }
