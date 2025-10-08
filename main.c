@@ -29,6 +29,12 @@ struct VkState{
     VkQueue graphicsQueue;
     VkQueue computeQueue;
     VkSurfaceKHR surface;
+    struct SwapchainInfo{
+        VkSurfaceCapabilitiesKHR capabilities;
+        VkSurfaceFormatKHR format;
+        VkPresentModeKHR presentMode;
+    }swapchainInfo;
+    VkExtent2D extent;
 
     VkDebugUtilsMessengerEXT debugMessenger;
 };
@@ -109,7 +115,7 @@ bool checkValidationLayerSupport(){
 }
 
 void initWindow(struct VkState* state){
-    printf("[+] Initializing Window]\n");
+    printf("[+] Initializing Window\n");
     glfwInit();
     state->resolution.width  = 800;
     state->resolution.height = 600;
@@ -205,7 +211,6 @@ void setupQueues(struct VkState* state){
 
 void createLogicalDevice(struct VkState* state){
     printf("[+] Creating Logical Device\n");
-    const char* validationLayer = "VK_LAYER_KHRONOS_validation";
     VkDeviceQueueCreateInfo queueCreateInfos[2];
     uint32_t queueCreateInfoCount = 0;
     state->queuePriority = 1.0f;
@@ -230,15 +235,23 @@ void createLogicalDevice(struct VkState* state){
         queueCreateInfoCount++;
     }
 
+    const char * enabledExtensions[] = { VK_KHR_SWAPCHAIN_EXTENSION_NAME, };
+    uint32_t enabledExtensionCount = 1;
+
     VkPhysicalDeviceFeatures enabledFeatures = {};
+
+    const char* validationLayer = "VK_LAYER_KHRONOS_validation";
+    uint32_t enabledLayerCount = 1;
+
     VkDeviceCreateInfo createInfo = {
         .sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
         .pQueueCreateInfos = queueCreateInfos,
         .queueCreateInfoCount = queueCreateInfoCount,
+        .ppEnabledExtensionNames = enabledExtensions,
+        .enabledExtensionCount = enabledExtensionCount,
         .pEnabledFeatures = &enabledFeatures,
-        .enabledExtensionCount = 0,
         .ppEnabledLayerNames = &validationLayer,
-        .enabledLayerCount = 1,
+        .enabledLayerCount = enabledLayerCount,
     };
     assert(vkCreateDevice(state->physicalDevice, &createInfo, NULL, &state->device) == VK_SUCCESS);
 }
@@ -256,6 +269,52 @@ void createSurface(struct VkState* state){
     vkGetPhysicalDeviceSurfaceSupportKHR(state->physicalDevice, state->queueFamilyIndices.graphicsFamily, state->surface, &presentSupport);
     assert(presentSupport);
 };
+
+int inline clamp(int input, int min, int max){
+    return input < min ? min : (input > max ? max : input);
+}
+
+void createSwapChain(struct VkState* state){
+    vkGetPhysicalDeviceSurfaceCapabilitiesKHR(state->physicalDevice, state->surface, &state->swapchainInfo.capabilities);
+
+    uint32_t formatCount = 0;
+    vkGetPhysicalDeviceSurfaceFormatsKHR(state->physicalDevice, state->surface, &formatCount, NULL);
+    VkSurfaceFormatKHR formats[formatCount];
+    vkGetPhysicalDeviceSurfaceFormatsKHR(state->physicalDevice, state->surface, &formatCount, formats);
+    for(int i = 0; i < formatCount; i++){
+        if((formats[i].format == VK_FORMAT_B8G8R8A8_SRGB) && (formats[i].colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR)){
+            printf("[!] Found desired format!\n");
+            state->swapchainInfo.format = formats[i];
+            break;
+        }
+    }
+    printf("[+] Using Swapchain format %i with colorspace %i\n", state->swapchainInfo.format.format, state->swapchainInfo.format.colorSpace);
+
+    uint32_t presentCount = 0;
+    vkGetPhysicalDeviceSurfacePresentModesKHR(state->physicalDevice, state->surface, &presentCount, NULL);
+    VkPresentModeKHR presentModes[presentCount];
+    vkGetPhysicalDeviceSurfacePresentModesKHR(state->physicalDevice, state->surface, &presentCount, presentModes);
+    for(int i = 0; i < presentCount; i++){
+        if(presentModes[i] == VK_PRESENT_MODE_IMMEDIATE_KHR){
+            state->swapchainInfo.presentMode = presentModes[i];
+            break;
+        }
+    }
+    printf("[+] Using present mode %i\n", state->swapchainInfo.presentMode);
+
+    if(state->swapchainInfo.capabilities.currentExtent.height != UINT32_MAX){
+        state->extent = state->swapchainInfo.capabilities.currentExtent;
+    } else {
+        int width, height;
+        glfwGetFramebufferSize(state->window, &width, &height);
+        state->extent.width = (uint32_t)(width);
+        state->extent.height= (uint32_t)(height);
+        state->extent.width = clamp(state->extent.width, 
+                state->swapchainInfo.capabilities.minImageExtent.width, state->swapchainInfo.capabilities.maxImageExtent.width);
+        state->extent.height = clamp(state->extent.height, 
+                state->swapchainInfo.capabilities.minImageExtent.height, state->swapchainInfo.capabilities.maxImageExtent.height);
+    }
+}
 
 void renderLoop(struct VkState* state){
     printf("[+] Entering Render Loop\n");
@@ -277,6 +336,7 @@ int main(void){
     createLogicalDevice(&state);
     retrieveQueues(&state);
     createSurface(&state);
+    createSwapChain(&state);
 
     renderLoop(&state);
     cleanup(&state);
