@@ -6,6 +6,7 @@
 #include <string.h>
 #include <stdio.h>
 #include <stdbool.h>
+#include <stdlib.h>
 
 struct VkState{
     struct Resolution{
@@ -40,6 +41,9 @@ struct VkState{
     VkSwapchainKHR swapchain;
     VkImage* swapchainImages;
     VkImageView* swapchainImageViews;
+    VkPipeline graphicsPipeline;
+    VkShaderModule vertexShader;
+    VkShaderModule fragmentShader;
 
     VkDebugUtilsMessengerEXT debugMessenger;
 };
@@ -372,7 +376,72 @@ void createImageViews(struct VkState* state){
     }
 }
 
+unsigned char * readFile(const char* filename, size_t* outSize){
+    FILE* file = fopen(filename, "rb"); 
+    if(!file) return NULL;
+
+    if(fseek(file, 0, SEEK_END) != 0){ fclose(file); return NULL; }
+
+    long fileSize = ftell(file);
+    if(fileSize < 0) {fclose(file); return NULL;}
+
+    rewind(file);
+
+    unsigned char* buffer = (unsigned char*)malloc(fileSize);
+
+    size_t bytesRead = fread(buffer, 1, fileSize, file);
+    if(bytesRead != (size_t)fileSize){ free(buffer); fclose(file); return NULL; }
+
+    fclose(file);
+    if(outSize) *outSize = bytesRead;
+    return buffer;
+}
+
+VkShaderModule createShaderModule(unsigned char * code, size_t size, struct VkState* state){
+    VkShaderModuleCreateInfo createInfo = {
+        .sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
+        .codeSize = size,
+        .pCode = (const uint32_t*)code
+    };
+    VkShaderModule shader;
+    assert(vkCreateShaderModule(state->device, &createInfo, NULL, &shader) == VK_SUCCESS);
+    return shader;
+}
+
+void createShaders(struct VkState* state){
+    printf("[+] Creating Shaders\n");
+    size_t size;
+    unsigned char * vertexShaderSPV = readFile("assets/vert.spv", &size);
+    printf("[+] read size %lu\n",size);
+    state->vertexShader = createShaderModule(vertexShaderSPV, size, state);
+
+    unsigned char * fragmentShaderSPV = readFile("assets/frag.spv", &size);
+    printf("[+] read size %lu\n",size);
+    state->fragmentShader = createShaderModule(fragmentShaderSPV, size, state);
+
+    free(vertexShaderSPV);
+    free(fragmentShaderSPV);
+}
+
 void createGraphicsPipeline(struct VkState* state){
+    printf("[+] Creating Graphics pipeline\n");
+    VkPipelineShaderStageCreateInfo vertShaderStageInfo = {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+        .stage = VK_SHADER_STAGE_VERTEX_BIT,
+        .module = state->vertexShader,
+        .pName = "main",
+        .pSpecializationInfo = NULL
+    };
+
+    VkPipelineShaderStageCreateInfo fragShaderStageInfo = {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+        .stage = VK_SHADER_STAGE_FRAGMENT_BIT,
+        .module = state->fragmentShader,
+        .pName = "main",
+        .pSpecializationInfo = NULL
+    };
+
+    VkPipelineShaderStageCreateInfo shaderStages[] = {vertShaderStageInfo, fragShaderStageInfo};
 
 }
 
@@ -398,6 +467,7 @@ int main(void){
     createSurface(&state);
     createSwapChain(&state);
     createImageViews(&state);
+    createShaders(&state);
     createGraphicsPipeline(&state);
 
     renderLoop(&state);
@@ -410,6 +480,8 @@ void cleanup(struct VkState* state){
     for(int i = 0; i < state->imageCount; i++){
         vkDestroyImageView(state->device, state->swapchainImageViews[i], NULL);
     }
+    vkDestroyShaderModule(state->device, state->vertexShader, NULL);
+    vkDestroyShaderModule(state->device, state->fragmentShader, NULL);
     vkDestroySwapchainKHR(state->device, state->swapchain, NULL);
     vkDestroySurfaceKHR(state->instance, state->surface, NULL);
     vkDestroyDevice(state->device, NULL);
