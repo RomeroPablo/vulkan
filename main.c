@@ -1,3 +1,4 @@
+#include <stdlib.h>
 #include <vulkan/vulkan_core.h>
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
@@ -37,6 +38,7 @@ struct VkState{
     VkExtent2D extent;
     uint32_t imageCount;
     VkSwapchainKHR swapchain;
+    VkImage* swapChainImages;
 
     VkDebugUtilsMessengerEXT debugMessenger;
 };
@@ -339,6 +341,10 @@ void createSwapChain(struct VkState* state){
     };
 
     assert(vkCreateSwapchainKHR(state->device, &createInfo, NULL, &state->swapchain) == VK_SUCCESS);
+
+    vkGetSwapchainImagesKHR(state->device, state->swapchain, &state->imageCount, NULL);
+    state->swapChainImages = calloc(state->imageCount, sizeof(VkImage) * state->imageCount);
+    vkGetSwapchainImagesKHR(state->device, state->swapchain, &state->imageCount, state->swapChainImages);
 }
 
 void renderLoop(struct VkState* state){
@@ -376,6 +382,7 @@ void cleanup(struct VkState* state){
     vkDestroyInstance(state->instance, NULL);
 
     glfwDestroyWindow(state->window);
+    free(state->swapChainImages); state->swapChainImages = NULL;
 
     glfwTerminate();
 }
