@@ -38,7 +38,8 @@ struct VkState{
     VkExtent2D extent;
     uint32_t imageCount;
     VkSwapchainKHR swapchain;
-    VkImage* swapChainImages;
+    VkImage* swapchainImages;
+    VkImageView* swapchainImageViews;
 
     VkDebugUtilsMessengerEXT debugMessenger;
 };
@@ -343,8 +344,32 @@ void createSwapChain(struct VkState* state){
     assert(vkCreateSwapchainKHR(state->device, &createInfo, NULL, &state->swapchain) == VK_SUCCESS);
 
     vkGetSwapchainImagesKHR(state->device, state->swapchain, &state->imageCount, NULL);
-    state->swapChainImages = calloc(state->imageCount, sizeof(VkImage) * state->imageCount);
-    vkGetSwapchainImagesKHR(state->device, state->swapchain, &state->imageCount, state->swapChainImages);
+    state->swapchainImages = calloc(state->imageCount, sizeof(VkImage) * state->imageCount);
+    vkGetSwapchainImagesKHR(state->device, state->swapchain, &state->imageCount, state->swapchainImages);
+}
+
+void createImageViews(struct VkState* state){
+    printf("[+] Creating Image Views\n");
+    state->swapchainImageViews = calloc(state->imageCount, sizeof(VkImageView) * state->imageCount);
+    for(int i = 0; i < state->imageCount; i++){
+        VkImageViewCreateInfo createInfo = {
+            .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
+            .image = state->swapchainImages[i],
+            .viewType = VK_IMAGE_VIEW_TYPE_2D,
+            .format = state->swapchainInfo.format.format,
+            .components.r = VK_COMPONENT_SWIZZLE_IDENTITY,
+            .components.g = VK_COMPONENT_SWIZZLE_IDENTITY,
+            .components.b = VK_COMPONENT_SWIZZLE_IDENTITY,
+            .components.a = VK_COMPONENT_SWIZZLE_IDENTITY,
+            .subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+            .subresourceRange.baseMipLevel = 0,
+            .subresourceRange.levelCount = 1,
+            .subresourceRange.baseArrayLayer = 0,
+            .subresourceRange.layerCount = 1,
+
+        };
+        assert(vkCreateImageView(state->device, &createInfo, NULL, &state->swapchainImageViews[i]) == VK_SUCCESS);
+    }
 }
 
 void renderLoop(struct VkState* state){
@@ -368,6 +393,7 @@ int main(void){
     retrieveQueues(&state);
     createSurface(&state);
     createSwapChain(&state);
+    createImageViews(&state);
 
     renderLoop(&state);
     cleanup(&state);
@@ -376,13 +402,17 @@ int main(void){
 void cleanup(struct VkState* state){
     printf("[!] Cleaning up Instance\n");
     DestroyDebugUtilsMessengerEXT(state->instance, state->debugMessenger, NULL);
+    for(int i = 0; i < state->imageCount; i++){
+        vkDestroyImageView(state->device, state->swapchainImageViews[i], NULL);
+    }
     vkDestroySwapchainKHR(state->device, state->swapchain, NULL);
     vkDestroySurfaceKHR(state->instance, state->surface, NULL);
     vkDestroyDevice(state->device, NULL);
     vkDestroyInstance(state->instance, NULL);
 
     glfwDestroyWindow(state->window);
-    free(state->swapChainImages); state->swapChainImages = NULL;
-
+    free(state->swapchainImages); state->swapchainImages = NULL;
+    free(state->swapchainImageViews); state->swapchainImageViews = NULL;
+    
     glfwTerminate();
 }
