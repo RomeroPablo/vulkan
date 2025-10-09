@@ -41,9 +41,10 @@ struct VkState{
     VkSwapchainKHR swapchain;
     VkImage* swapchainImages;
     VkImageView* swapchainImageViews;
-    VkPipeline graphicsPipeline;
     VkShaderModule vertexShader;
     VkShaderModule fragmentShader;
+    VkPipeline graphicsPipeline;
+    VkPipelineLayout pipelineLayout;
 
     VkDebugUtilsMessengerEXT debugMessenger;
 };
@@ -532,8 +533,15 @@ void createGraphicsPipeline(struct VkState* state){
         .blendConstants[3] = 0.0f,
     };
 
-    VkPipelineLayout pipelineLayout;
+    VkPipelineLayoutCreateInfo pipelineLayoutCreateInfo = {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
+        .setLayoutCount = 0,
+        .pSetLayouts = NULL,
+        .pushConstantRangeCount = 0,
+        .pPushConstantRanges = NULL
+    };
 
+    assert(vkCreatePipelineLayout(state->device, &pipelineLayoutCreateInfo, NULL, &state->pipelineLayout) == VK_SUCCESS);
 }
 
 void renderLoop(struct VkState* state){
@@ -573,6 +581,7 @@ void cleanup(struct VkState* state){
     }
     vkDestroyShaderModule(state->device, state->vertexShader, NULL);
     vkDestroyShaderModule(state->device, state->fragmentShader, NULL);
+    vkDestroyPipelineLayout(state->device, state->pipelineLayout, NULL);
     vkDestroySwapchainKHR(state->device, state->swapchain, NULL);
     vkDestroySurfaceKHR(state->instance, state->surface, NULL);
     vkDestroyDevice(state->device, NULL);
