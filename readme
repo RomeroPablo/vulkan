@@ -68,3 +68,14 @@ thus we have the Compute Unit
 └───────────┘ └───────────┘ └───────────┘ └───────────┘ └───────────┘
 
 *we will assume userspace, and using existing API*
+
+When using Vulkan, the first thing we must do is:
+acquire the physical device and it's supported properties
+e.g. types and number of queues
+we then iterate through the properties, selecting the appropriate queues,
+say graphics or compute
+
+once we collect our desired device, it's properties, and queues that we want to interface with,
+we create a logical device
+
+we then create a swapchain and images that we will interact with
