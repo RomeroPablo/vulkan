@@ -79,3 +79,4 @@ once we collect our desired device, it's properties, and queues that we want to 
 we create a logical device
 
 we then create a swapchain and images that we will interact with
+

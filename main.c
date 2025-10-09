@@ -372,6 +372,10 @@ void createImageViews(struct VkState* state){
     }
 }
 
+void createGraphicsPipeline(struct VkState* state){
+
+}
+
 void renderLoop(struct VkState* state){
     printf("[+] Entering Render Loop\n");
     while(!glfwWindowShouldClose(state->window)){
@@ -394,6 +398,7 @@ int main(void){
     createSurface(&state);
     createSwapChain(&state);
     createImageViews(&state);
+    createGraphicsPipeline(&state);
 
     renderLoop(&state);
     cleanup(&state);
