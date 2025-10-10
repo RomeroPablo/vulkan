@@ -322,7 +322,7 @@ void createSwapChain(struct VkState* state){
         int width, height;
         glfwGetFramebufferSize(state->window, &width, &height);
         state->extent.width = (uint32_t)(width);
-        state->extent.height= (uint32_t)(height);
+        state->extent.height = (uint32_t)(height);
         state->extent.width = clamp(state->extent.width, 
                 state->swapchainInfo.capabilities.minImageExtent.width, state->swapchainInfo.capabilities.maxImageExtent.width);
         state->extent.height = clamp(state->extent.height, 
@@ -502,19 +502,6 @@ void createGraphicsPipeline(struct VkState* state){
         .topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
         .primitiveRestartEnable = VK_FALSE
     };
-
-    VkViewport viewport = {
-        .x = 0.0f,
-        .y = 0.0f,
-        .width = state->extent.width,
-        .height = state->extent.height,
-        .minDepth = 0.0f,
-        .maxDepth = 1.0f
-    };
-    VkRect2D scissor = {
-        .offset = {0, 0},
-        .extent = state->extent,
-    };
     VkPipelineViewportStateCreateInfo viewportState = {
         .sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO,
         .viewportCount = 1,
@@ -646,6 +633,46 @@ void createCommandBuffers(struct VkState* state){
     assert(vkAllocateCommandBuffers(state->device, &allocInfo, &state->commandBuffer) == VK_SUCCESS);
 }
 
+void recordCommandBuffer(struct VkState* state, uint32_t imageIndex){
+    printf("[+] Recording Command Buffers\n");
+    VkCommandBufferBeginInfo beginInfo = {
+        .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
+        .flags = 0,
+        .pInheritanceInfo = NULL
+    };
+    assert(vkBeginCommandBuffer(state->commandBuffer, &beginInfo) == VK_SUCCESS);
+
+    VkClearValue clearColor = {{{0.0f, 0.0f, 0.0f, 1.0f}}};
+    VkRenderPassBeginInfo renderPassInfo = {
+        .sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
+        .renderPass = state->renderPass,
+        .framebuffer = state->swapchainFramebuffers[imageIndex],
+        .renderArea.offset = {0, 0},
+        .renderArea.extent = state->extent,
+        .clearValueCount = 1,
+        .pClearValues = &clearColor
+    };
+    vkCmdBeginRenderPass(state->commandBuffer, &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
+    vkCmdBindPipeline(state->commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, state->graphicsPipeline);
+
+    VkViewport viewport = {
+        .x = 0.0f,
+        .y = 0.0f,
+        .width = state->extent.width,
+        .height = state->extent.height,
+        .minDepth = 0.0f,
+        .maxDepth = 1.0f
+    };
+    vkCmdSetViewport(state->commandBuffer, 0, 1, &viewport);
+    VkRect2D scissor = {
+        .offset = {0, 0},
+        .extent = state->extent,
+    };
+    vkCmdSetScissor(state->commandBuffer, 0, 1, &scissor);
+
+    vkCmdDraw(state->commandBuffer, 3, 1, 0, 0);
+}
+
 void renderLoop(struct VkState* state){
     printf("[+] Entering Render Loop\n");
     while(!glfwWindowShouldClose(state->window)){
@@ -674,6 +701,7 @@ int main(void){
     createFrameBuffers(&state);
     createCommandPool(&state);
     createCommandBuffers(&state);
+    recordCommandBuffer(&state, 0); // ?
 
     renderLoop(&state);
     cleanup(&state);
