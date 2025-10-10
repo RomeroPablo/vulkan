@@ -727,6 +727,13 @@ void cleanupSwapchain(struct VkState* state){
 }
 
 void recreateSwapChain(struct VkState* state){
+    int width = 0, height = 0;
+    glfwGetFramebufferSize(state->window, &width, &height);
+    while(width == 0 || height == 0){
+        glfwGetFramebufferSize(state->window, &width, &height);
+        glfwWaitEvents();
+    }
+
     vkDeviceWaitIdle(state->device);
 
     createSwapChain(state);
