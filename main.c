@@ -46,6 +46,7 @@ struct VkState{
     VkRenderPass renderPass;
     VkPipelineLayout pipelineLayout;
     VkPipeline graphicsPipeline;
+    VkFramebuffer* swapchainFramebuffers;
 
     VkDebugUtilsMessengerEXT debugMessenger;
 };
@@ -350,13 +351,13 @@ void createSwapChain(struct VkState* state){
     assert(vkCreateSwapchainKHR(state->device, &createInfo, NULL, &state->swapchain) == VK_SUCCESS);
 
     vkGetSwapchainImagesKHR(state->device, state->swapchain, &state->imageCount, NULL);
-    state->swapchainImages = calloc(state->imageCount, sizeof(VkImage) * state->imageCount);
+    state->swapchainImages = malloc(sizeof(VkImage) * state->imageCount);
     vkGetSwapchainImagesKHR(state->device, state->swapchain, &state->imageCount, state->swapchainImages);
 }
 
 void createImageViews(struct VkState* state){
     printf("[+] Creating Image Views\n");
-    state->swapchainImageViews = calloc(state->imageCount, sizeof(VkImageView) * state->imageCount);
+    state->swapchainImageViews = malloc(sizeof(VkImageView) * state->imageCount);
     for(int i = 0; i < state->imageCount; i++){
         VkImageViewCreateInfo createInfo = {
             .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
@@ -578,6 +579,47 @@ void createGraphicsPipeline(struct VkState* state){
     };
 
     assert(vkCreatePipelineLayout(state->device, &pipelineLayoutCreateInfo, NULL, &state->pipelineLayout) == VK_SUCCESS);
+
+    VkGraphicsPipelineCreateInfo pipelineInfo = {
+        .sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,
+        .stageCount = 2,
+        .pStages = shaderStages,
+        .pVertexInputState = &vertexInputInfo,
+        .pInputAssemblyState = &inputAssembly,
+        .pViewportState = &viewportState,
+        .pRasterizationState = &rasterizer,
+        .pMultisampleState = &multisampling,
+        .pDepthStencilState = NULL,
+        .pColorBlendState = &colorBlending,
+        .pDynamicState = &dynamicState,
+        .layout = state->pipelineLayout,
+        .renderPass = state->renderPass,
+        .subpass = 0,
+        .basePipelineHandle = VK_NULL_HANDLE,
+        .basePipelineIndex = -1
+    };
+
+    assert(vkCreateGraphicsPipelines(state->device, VK_NULL_HANDLE, 1, &pipelineInfo, NULL, &state->graphicsPipeline) == VK_SUCCESS);
+}
+
+void createFrameBuffers(struct VkState* state){
+    state->swapchainFramebuffers = malloc(state->imageCount * sizeof(VkFramebuffer));
+    for(size_t i = 0; i < state->imageCount; i++){
+        VkImageView attachments[] = {
+            state->swapchainImageViews[i]
+        };
+
+        VkFramebufferCreateInfo framebufferInfo = {
+            .sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO,
+            .renderPass = state->renderPass,
+            .attachmentCount = 1,
+            .pAttachments = attachments,
+            .width = state->extent.width,
+            .height = state->extent.height,
+            .layers = 1
+        };
+        assert(vkCreateFramebuffer(state->device, &framebufferInfo, NULL, &state->swapchainFramebuffers[i]) == VK_SUCCESS);
+    }
 }
 
 void renderLoop(struct VkState* state){
@@ -605,6 +647,7 @@ int main(void){
     createRenderPass(&state);
     createShaders(&state);
     createGraphicsPipeline(&state);
+    createFrameBuffers(&state);
 
     renderLoop(&state);
     cleanup(&state);
@@ -613,11 +656,11 @@ int main(void){
 void cleanup(struct VkState* state){
     printf("[!] Cleaning up Instance\n");
     DestroyDebugUtilsMessengerEXT(state->instance, state->debugMessenger, NULL);
-    for(int i = 0; i < state->imageCount; i++){
-        vkDestroyImageView(state->device, state->swapchainImageViews[i], NULL);
-    }
+    for(int i = 0; i < state->imageCount; i++){ vkDestroyFramebuffer(state->device, state->swapchainFramebuffers[i], NULL); }
+    for(int i = 0; i < state->imageCount; i++){ vkDestroyImageView(state->device, state->swapchainImageViews[i], NULL); }
     vkDestroyShaderModule(state->device, state->vertexShader, NULL);
     vkDestroyShaderModule(state->device, state->fragmentShader, NULL);
+    vkDestroyPipeline(state->device, state->graphicsPipeline, NULL);
     vkDestroyPipelineLayout(state->device, state->pipelineLayout, NULL);
     vkDestroyRenderPass(state->device, state->renderPass, NULL);
     vkDestroySwapchainKHR(state->device, state->swapchain, NULL);
@@ -628,6 +671,7 @@ void cleanup(struct VkState* state){
     glfwDestroyWindow(state->window);
     free(state->swapchainImages); state->swapchainImages = NULL;
     free(state->swapchainImageViews); state->swapchainImageViews = NULL;
+    free(state->swapchainFramebuffers); state->swapchainFramebuffers = NULL;
     
     glfwTerminate();
 }
