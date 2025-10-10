@@ -671,6 +671,8 @@ void recordCommandBuffer(struct VkState* state, uint32_t imageIndex){
     vkCmdSetScissor(state->commandBuffer, 0, 1, &scissor);
 
     vkCmdDraw(state->commandBuffer, 3, 1, 0, 0);
+    vkCmdEndRenderPass(state->commandBuffer);
+    assert(vkEndCommandBuffer(state->commandBuffer) == VK_SUCCESS);
 }
 
 void renderLoop(struct VkState* state){
