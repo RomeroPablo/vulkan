@@ -33,7 +33,7 @@ struct VkState{
     VkSurfaceKHR surface;
     struct SwapchainInfo{
         VkSurfaceCapabilitiesKHR capabilities;
-        VkSurfaceFormatKHR format;
+        VkSurfaceFormatKHR surfaceFormat;
         VkPresentModeKHR presentMode;
     }swapchainInfo;
     VkExtent2D extent;
@@ -43,8 +43,9 @@ struct VkState{
     VkImageView* swapchainImageViews;
     VkShaderModule vertexShader;
     VkShaderModule fragmentShader;
-    VkPipeline graphicsPipeline;
+    VkRenderPass renderPass;
     VkPipelineLayout pipelineLayout;
+    VkPipeline graphicsPipeline;
 
     VkDebugUtilsMessengerEXT debugMessenger;
 };
@@ -295,11 +296,11 @@ void createSwapChain(struct VkState* state){
     for(int i = 0; i < formatCount; i++){
         if((formats[i].format == VK_FORMAT_B8G8R8A8_SRGB) && (formats[i].colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR)){
             printf("[!] Found desired format!\n");
-            state->swapchainInfo.format = formats[i];
+            state->swapchainInfo.surfaceFormat = formats[i];
             break;
         }
     }
-    printf("[+] Using Swapchain format %i with colorspace %i\n", state->swapchainInfo.format.format, state->swapchainInfo.format.colorSpace);
+    printf("[+] Using Swapchain format %i with colorspace %i\n", state->swapchainInfo.surfaceFormat.format, state->swapchainInfo.surfaceFormat.colorSpace);
 
     uint32_t presentCount = 0;
     vkGetPhysicalDeviceSurfacePresentModesKHR(state->physicalDevice, state->surface, &presentCount, NULL);
@@ -331,8 +332,8 @@ void createSwapChain(struct VkState* state){
         .sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR,
         .surface = state->surface,
         .minImageCount = state->swapchainInfo.capabilities.minImageCount,
-        .imageFormat = state->swapchainInfo.format.format,
-        .imageColorSpace = state->swapchainInfo.format.colorSpace,
+        .imageFormat = state->swapchainInfo.surfaceFormat.format,
+        .imageColorSpace = state->swapchainInfo.surfaceFormat.colorSpace,
         .imageExtent = state->extent,
         .imageArrayLayers = 1,
         .imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
@@ -361,7 +362,7 @@ void createImageViews(struct VkState* state){
             .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
             .image = state->swapchainImages[i],
             .viewType = VK_IMAGE_VIEW_TYPE_2D,
-            .format = state->swapchainInfo.format.format,
+            .format = state->swapchainInfo.surfaceFormat.format,
             .components.r = VK_COMPONENT_SWIZZLE_IDENTITY,
             .components.g = VK_COMPONENT_SWIZZLE_IDENTITY,
             .components.b = VK_COMPONENT_SWIZZLE_IDENTITY,
@@ -375,6 +376,41 @@ void createImageViews(struct VkState* state){
         };
         assert(vkCreateImageView(state->device, &createInfo, NULL, &state->swapchainImageViews[i]) == VK_SUCCESS);
     }
+}
+
+void createRenderPass(struct VkState* state){
+    printf("[+] Creating Render Pass\n");
+    VkAttachmentDescription colorAttachment = {
+        .format = state->swapchainInfo.surfaceFormat.format,
+        .samples = VK_SAMPLE_COUNT_1_BIT,
+        .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
+        .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
+        .stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
+        .stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
+        .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+        .finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR
+    };
+
+    VkAttachmentReference colorAttachmentRef = {
+        .attachment = 0,
+        .layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL
+    };
+
+    VkSubpassDescription subpass = {
+        .pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS,
+        .colorAttachmentCount = 1,
+        .pColorAttachments = &colorAttachmentRef
+    };
+
+    VkRenderPassCreateInfo renderPassInfo = {
+        .sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO,
+        .attachmentCount = 1,
+        .pAttachments = &colorAttachment,
+        .subpassCount = 1,
+        .pSubpasses = &subpass
+    };
+
+    assert(vkCreateRenderPass(state->device, &renderPassInfo, NULL, &state->renderPass) == VK_SUCCESS);
 }
 
 unsigned char * readFile(const char* filename, size_t* outSize){
@@ -566,6 +602,7 @@ int main(void){
     createSurface(&state);
     createSwapChain(&state);
     createImageViews(&state);
+    createRenderPass(&state);
     createShaders(&state);
     createGraphicsPipeline(&state);
 
@@ -582,6 +619,7 @@ void cleanup(struct VkState* state){
     vkDestroyShaderModule(state->device, state->vertexShader, NULL);
     vkDestroyShaderModule(state->device, state->fragmentShader, NULL);
     vkDestroyPipelineLayout(state->device, state->pipelineLayout, NULL);
+    vkDestroyRenderPass(state->device, state->renderPass, NULL);
     vkDestroySwapchainKHR(state->device, state->swapchain, NULL);
     vkDestroySurfaceKHR(state->instance, state->surface, NULL);
     vkDestroyDevice(state->device, NULL);
