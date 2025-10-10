@@ -54,6 +54,7 @@ struct VkState{
     VkFence* inFlightFences;
     uint32_t MAX_FRAMES_IN_FLIGHT;
     uint32_t currentFrame;
+    bool framebufferResized;
 
     VkDebugUtilsMessengerEXT debugMessenger;
 };
@@ -133,6 +134,11 @@ bool checkValidationLayerSupport(){
     return layerFound;
 }
 
+static void frameBufferResizeCallback(GLFWwindow* window, int width, int height){
+    struct VkState* temp = (struct VkState*)glfwGetWindowUserPointer(window);
+    temp->framebufferResized = true;
+}
+
 void initWindow(struct VkState* state){
     printf("[+] Initializing Window\n");
     glfwInit();
@@ -142,6 +148,8 @@ void initWindow(struct VkState* state){
     glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE);
     state->window = glfwCreateWindow(state->resolution.width, 
             state->resolution.height, "Vulkan", NULL, NULL);
+    glfwSetWindowUserPointer(state->window, state);
+    glfwSetFramebufferSizeCallback(state->window, frameBufferResizeCallback);
     assert(state->window);
 }
 
@@ -728,7 +736,6 @@ void recreateSwapChain(struct VkState* state){
 
 void drawFrame(struct VkState* state){
     vkWaitForFences(state->device, 1, &state->inFlightFences[state->currentFrame], VK_TRUE, UINT64_MAX);
-    vkResetFences(state->device, 1, &state->inFlightFences[state->currentFrame]);
 
     uint32_t imageIndex;
     VkResult result = 
@@ -736,10 +743,12 @@ void drawFrame(struct VkState* state){
 
     if(result == VK_ERROR_OUT_OF_DATE_KHR){
         recreateSwapChain(state);
+        return;
     } else if ((result != VK_SUCCESS) && (result != VK_SUBOPTIMAL_KHR)){
         assert(0);
     }
 
+    vkResetFences(state->device, 1, &state->inFlightFences[state->currentFrame]);
     vkResetCommandBuffer(state->commandBuffers[state->currentFrame], 0);
     recordCommandBuffer(state, state->commandBuffers[state->currentFrame], imageIndex);
 
@@ -770,7 +779,8 @@ void drawFrame(struct VkState* state){
         .pResults = NULL
     };
     result = vkQueuePresentKHR(state->graphicsQueue, &presentInfo);
-    if(result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR){
+    if(result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR || state->framebufferResized){
+        state->framebufferResized = false;
         recreateSwapChain(state);
     } else if (result != VK_SUCCESS){
         assert(0);
