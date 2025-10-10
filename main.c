@@ -47,6 +47,8 @@ struct VkState{
     VkPipelineLayout pipelineLayout;
     VkPipeline graphicsPipeline;
     VkFramebuffer* swapchainFramebuffers;
+    VkCommandPool commandPool;
+    VkCommandBuffer commandBuffer;
 
     VkDebugUtilsMessengerEXT debugMessenger;
 };
@@ -622,6 +624,19 @@ void createFrameBuffers(struct VkState* state){
     }
 }
 
+void createCommandPool(struct VkState* state){
+    VkCommandPoolCreateInfo poolInfo = {
+        .sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
+        .flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT,
+        .queueFamilyIndex = state->queueFamilyIndices.graphicsFamily
+    };
+    assert(vkCreateCommandPool(state->device, &poolInfo, NULL, &state->commandPool) == VK_SUCCESS);
+}
+
+void createCommandBuffers(struct VkState* state){
+
+}
+
 void renderLoop(struct VkState* state){
     printf("[+] Entering Render Loop\n");
     while(!glfwWindowShouldClose(state->window)){
@@ -648,6 +663,8 @@ int main(void){
     createShaders(&state);
     createGraphicsPipeline(&state);
     createFrameBuffers(&state);
+    createCommandPool(&state);
+    createCommandBuffers(&state);
 
     renderLoop(&state);
     cleanup(&state);
@@ -658,6 +675,7 @@ void cleanup(struct VkState* state){
     DestroyDebugUtilsMessengerEXT(state->instance, state->debugMessenger, NULL);
     for(int i = 0; i < state->imageCount; i++){ vkDestroyFramebuffer(state->device, state->swapchainFramebuffers[i], NULL); }
     for(int i = 0; i < state->imageCount; i++){ vkDestroyImageView(state->device, state->swapchainImageViews[i], NULL); }
+    vkDestroyCommandPool(state->device, state->commandPool, NULL);
     vkDestroyShaderModule(state->device, state->vertexShader, NULL);
     vkDestroyShaderModule(state->device, state->fragmentShader, NULL);
     vkDestroyPipeline(state->device, state->graphicsPipeline, NULL);
