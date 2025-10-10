@@ -49,6 +49,9 @@ struct VkState{
     VkFramebuffer* swapchainFramebuffers;
     VkCommandPool commandPool;
     VkCommandBuffer commandBuffer;
+    VkSemaphore imageAvailableSemaphore;
+    VkSemaphore renderFinishedSemaphore;
+    VkFence inFlightFence;
 
     VkDebugUtilsMessengerEXT debugMessenger;
 };
@@ -675,10 +678,27 @@ void recordCommandBuffer(struct VkState* state, uint32_t imageIndex){
     assert(vkEndCommandBuffer(state->commandBuffer) == VK_SUCCESS);
 }
 
+void createSyncObjects(struct VkState* state){
+    VkSemaphoreCreateInfo semaphoreCreateInfo = {
+        .sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO,
+    };
+    VkFenceCreateInfo fenceCreateInfo = {
+        .sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO
+    };
+    assert(vkCreateSemaphore(state->device, &semaphoreCreateInfo, NULL, &state->imageAvailableSemaphore) == VK_SUCCESS);
+    assert(vkCreateSemaphore(state->device, &semaphoreCreateInfo, NULL, &state->renderFinishedSemaphore) == VK_SUCCESS);
+    assert(vkCreateFence(state->device, &fenceCreateInfo, NULL, &state->inFlightFence) == VK_SUCCESS);
+}
+
+void drawFrame(struct VkState* state){
+
+};
+
 void renderLoop(struct VkState* state){
     printf("[+] Entering Render Loop\n");
     while(!glfwWindowShouldClose(state->window)){
         glfwPollEvents();
+        drawFrame(state);
     }
 }
 
