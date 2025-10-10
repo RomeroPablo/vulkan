@@ -724,6 +724,8 @@ void cleanupSwapchain(struct VkState* state){
     for(int i = 0; i < state->imageCount; i++){ vkDestroyFramebuffer(state->device, state->swapchainFramebuffers[i], NULL); }
     for(int i = 0; i < state->imageCount; i++){ vkDestroyImageView(state->device, state->swapchainImageViews[i], NULL); }
     vkDestroySwapchainKHR(state->device, state->swapchain, NULL);
+    free(state->swapchainFramebuffers); state->swapchainFramebuffers = NULL;
+    free(state->swapchainImageViews); state->swapchainImageViews = NULL;
 }
 
 void recreateSwapChain(struct VkState* state){
@@ -735,6 +737,7 @@ void recreateSwapChain(struct VkState* state){
     }
 
     vkDeviceWaitIdle(state->device);
+    cleanupSwapchain(state);
 
     createSwapChain(state);
     createImageViews(state);
