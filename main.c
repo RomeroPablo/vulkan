@@ -159,7 +159,6 @@ void createInstance(struct VkState* state){
     for(uint32_t i = 0; i < extensionCount; i++){
         printf("[!] Found: %s \n", extensions[i].extensionName);
     }
-
     uint32_t glfwExtensionsCount = 0;
     const char** glfwExtensions;
     glfwExtensions = glfwGetRequiredInstanceExtensions(&glfwExtensionsCount);
@@ -605,6 +604,7 @@ void createGraphicsPipeline(struct VkState* state){
 }
 
 void createFrameBuffers(struct VkState* state){
+    printf("[+] Creating Framebuffers\n");
     state->swapchainFramebuffers = malloc(state->imageCount * sizeof(VkFramebuffer));
     for(size_t i = 0; i < state->imageCount; i++){
         VkImageView attachments[] = {
@@ -625,6 +625,7 @@ void createFrameBuffers(struct VkState* state){
 }
 
 void createCommandPool(struct VkState* state){
+    printf("[+] Creating Command Pool\n");
     VkCommandPoolCreateInfo poolInfo = {
         .sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
         .flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT,
@@ -634,7 +635,15 @@ void createCommandPool(struct VkState* state){
 }
 
 void createCommandBuffers(struct VkState* state){
+    printf("[+] Creating Command Buffers\n");
+    VkCommandBufferAllocateInfo allocInfo = {
+        .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
+        .commandPool = state->commandPool,
+        .level = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
+        .commandBufferCount = 1
+    };
 
+    assert(vkAllocateCommandBuffers(state->device, &allocInfo, &state->commandBuffer) == VK_SUCCESS);
 }
 
 void renderLoop(struct VkState* state){
