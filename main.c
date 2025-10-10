@@ -734,6 +734,9 @@ void cleanup(struct VkState* state){
     DestroyDebugUtilsMessengerEXT(state->instance, state->debugMessenger, NULL);
     for(int i = 0; i < state->imageCount; i++){ vkDestroyFramebuffer(state->device, state->swapchainFramebuffers[i], NULL); }
     for(int i = 0; i < state->imageCount; i++){ vkDestroyImageView(state->device, state->swapchainImageViews[i], NULL); }
+    vkDestroySemaphore(state->device, state->imageAvailableSemaphore, NULL);
+    vkDestroySemaphore(state->device, state->renderFinishedSemaphore, NULL);
+    vkDestroyFence(state->device, state->inFlightFence, NULL);
     vkDestroyCommandPool(state->device, state->commandPool, NULL);
     vkDestroyShaderModule(state->device, state->vertexShader, NULL);
     vkDestroyShaderModule(state->device, state->fragmentShader, NULL);
