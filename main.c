@@ -401,6 +401,15 @@ void createRenderPass(struct VkState* state){
         .layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL
     };
 
+    VkSubpassDependency dependency = {
+        .srcSubpass = VK_SUBPASS_EXTERNAL,
+        .dstSubpass = 0,
+        .srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+        .srcAccessMask = 0,
+        .dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+        .dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT
+    };
+
     VkSubpassDescription subpass = {
         .pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS,
         .colorAttachmentCount = 1,
@@ -412,7 +421,9 @@ void createRenderPass(struct VkState* state){
         .attachmentCount = 1,
         .pAttachments = &colorAttachment,
         .subpassCount = 1,
-        .pSubpasses = &subpass
+        .pSubpasses = &subpass,
+        .dependencyCount = 1,
+        .pDependencies = &dependency
     };
 
     assert(vkCreateRenderPass(state->device, &renderPassInfo, NULL, &state->renderPass) == VK_SUCCESS);
@@ -637,7 +648,6 @@ void createCommandBuffers(struct VkState* state){
 }
 
 void recordCommandBuffer(struct VkState* state, uint32_t imageIndex){
-    printf("[+] Recording Command Buffers\n");
     VkCommandBufferBeginInfo beginInfo = {
         .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
         .flags = 0,
@@ -683,7 +693,8 @@ void createSyncObjects(struct VkState* state){
         .sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO,
     };
     VkFenceCreateInfo fenceCreateInfo = {
-        .sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO
+        .sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO,
+        .flags = VK_FENCE_CREATE_SIGNALED_BIT
     };
     assert(vkCreateSemaphore(state->device, &semaphoreCreateInfo, NULL, &state->imageAvailableSemaphore) == VK_SUCCESS);
     assert(vkCreateSemaphore(state->device, &semaphoreCreateInfo, NULL, &state->renderFinishedSemaphore) == VK_SUCCESS);
@@ -691,7 +702,42 @@ void createSyncObjects(struct VkState* state){
 }
 
 void drawFrame(struct VkState* state){
+    vkWaitForFences(state->device, 1, &state->inFlightFence, VK_TRUE, UINT64_MAX);
+    vkResetFences(state->device, 1, &state->inFlightFence);
 
+    uint32_t imageIndex;
+    vkAcquireNextImageKHR(state->device, state->swapchain, UINT64_MAX, state->imageAvailableSemaphore, VK_NULL_HANDLE, &imageIndex);
+
+    vkResetCommandBuffer(state->commandBuffer, 0);
+    recordCommandBuffer(state, imageIndex);
+
+    VkSemaphore waitSemaphores[] = {state->imageAvailableSemaphore};
+    VkSemaphore signalSemaphores[] = {state->renderFinishedSemaphore};
+    VkPipelineStageFlags waitStages[] = {VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT};
+    VkSubmitInfo submitInfo = {
+        .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
+        .waitSemaphoreCount = 1,
+        .pWaitSemaphores = waitSemaphores,
+        .pWaitDstStageMask = waitStages,
+        .commandBufferCount = 1,
+        .pCommandBuffers = &state->commandBuffer,
+        .signalSemaphoreCount = 1,
+        .pSignalSemaphores = signalSemaphores
+    };
+
+    assert(vkQueueSubmit(state->graphicsQueue, 1, &submitInfo, state->inFlightFence) == VK_SUCCESS);
+
+    VkSwapchainKHR swapChains[] = {state->swapchain};
+    VkPresentInfoKHR presentInfo = {
+        .sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR,
+        .waitSemaphoreCount = 1,
+        .pWaitSemaphores = signalSemaphores,
+        .swapchainCount = 1,
+        .pSwapchains = swapChains,
+        .pImageIndices = &imageIndex,
+        .pResults = NULL
+    };
+    vkQueuePresentKHR(state->graphicsQueue, &presentInfo);
 };
 
 void renderLoop(struct VkState* state){
@@ -723,7 +769,7 @@ int main(void){
     createFrameBuffers(&state);
     createCommandPool(&state);
     createCommandBuffers(&state);
-    recordCommandBuffer(&state, 0); // ?
+    createSyncObjects(&state);
 
     renderLoop(&state);
     cleanup(&state);
