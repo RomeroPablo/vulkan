@@ -69,14 +69,18 @@ thus we have the Compute Unit
 
 *we will assume userspace, and using existing API*
 
-When using Vulkan, the first thing we must do is:
-acquire the physical device and it's supported properties
-e.g. types and number of queues
-we then iterate through the properties, selecting the appropriate queues,
-say graphics or compute
-
-once we collect our desired device, it's properties, and queues that we want to interface with,
-we create a logical device
-
-we then create a swapchain and images that we will interact with
-
+When we start writing some vukan code,                                                      
+The first thing that we do is make a request to our device drivers                          
+On Linux, this may be your Mesa3D drivers (AMD), or Nouveau(NVIDIA)                         
+-- to provide us context for the device that we are running on                              
+   when making this request, we also make sure that the device supports                     
+   any extra features we might need by checking for & requesting Vulkan Extensions or Layers
+                                                                                            
+This is represented with a Vulkan Instance Type                                             
+┌───────────────────────────┐                                                               
+│VK_LAYER_KHRONOS_validation│                                                               
+│VK_KHR_surface             │       ┌──────────┐                                            
+│VK_KHR_xcb_surface         ├──────►│VkInstance│                                            
+│VK_EXT_debug_utils         │       └──────────┘                                            
+│...                        │                                                               
+└───────────────────────────┘                                                               

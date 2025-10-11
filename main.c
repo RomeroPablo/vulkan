@@ -300,6 +300,38 @@ static inline int clamp(int input, int min, int max){
     return input < min ? min : (input > max ? max : input);
 }
 
+static void destroyRenderFinishedSemaphores(struct VkState* state){
+    if(state->renderFinishedSemaphores == NULL){
+        return;
+    }
+
+    for(uint32_t i = 0; i < state->imageCount; i++){
+        if(state->renderFinishedSemaphores[i] != VK_NULL_HANDLE){
+            vkDestroySemaphore(state->device, state->renderFinishedSemaphores[i], NULL);
+        }
+    }
+
+    free(state->renderFinishedSemaphores);
+    state->renderFinishedSemaphores = NULL;
+}
+
+static void createRenderFinishedSemaphores(struct VkState* state){
+    assert(state->renderFinishedSemaphores == NULL);
+    if(state->imageCount == 0){
+        return;
+    }
+
+    state->renderFinishedSemaphores = malloc(state->imageCount * sizeof(VkSemaphore));
+
+    VkSemaphoreCreateInfo semaphoreCreateInfo = {
+        .sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO,
+    };
+
+    for(uint32_t i = 0; i < state->imageCount; i++){
+        assert(vkCreateSemaphore(state->device, &semaphoreCreateInfo, NULL, &state->renderFinishedSemaphores[i]) == VK_SUCCESS);
+    }
+}
+
 void createSwapChain(struct VkState* state){
     printf("[+] Creating Swapchain\n");
     vkGetPhysicalDeviceSurfaceCapabilitiesKHR(state->physicalDevice, state->surface, &state->swapchainInfo.capabilities);
@@ -367,6 +399,8 @@ void createSwapChain(struct VkState* state){
     vkGetSwapchainImagesKHR(state->device, state->swapchain, &state->imageCount, NULL);
     state->swapchainImages = malloc(sizeof(VkImage) * state->imageCount);
     vkGetSwapchainImagesKHR(state->device, state->swapchain, &state->imageCount, state->swapchainImages);
+
+    createRenderFinishedSemaphores(state);
 }
 
 void createImageViews(struct VkState* state){
@@ -701,9 +735,9 @@ void recordCommandBuffer(struct VkState* state, VkCommandBuffer commandBuffer, u
 }
 
 void createSyncObjects(struct VkState* state){
+    printf("Creating Synchronization Objects\n");
     state->currentFrame = 0;
     state->imageAvailableSemaphores = malloc(state->MAX_FRAMES_IN_FLIGHT * sizeof(VkSemaphore));
-    state->renderFinishedSemaphores = malloc(state->MAX_FRAMES_IN_FLIGHT * sizeof(VkSemaphore));
     state->inFlightFences =  malloc(state->MAX_FRAMES_IN_FLIGHT * sizeof(VkFence));
 
     VkSemaphoreCreateInfo semaphoreCreateInfo = {
@@ -715,7 +749,6 @@ void createSyncObjects(struct VkState* state){
     };
     for(int i = 0; i < state->MAX_FRAMES_IN_FLIGHT; i++){
         assert(vkCreateSemaphore(state->device, &semaphoreCreateInfo, NULL, &state->imageAvailableSemaphores[i]) == VK_SUCCESS);
-        assert(vkCreateSemaphore(state->device, &semaphoreCreateInfo, NULL, &state->renderFinishedSemaphores[i]) == VK_SUCCESS);
         assert(vkCreateFence(state->device, &fenceCreateInfo, NULL, &state->inFlightFences[i]) == VK_SUCCESS);
     }
 }
@@ -724,6 +757,7 @@ void cleanupSwapchain(struct VkState* state){
     for(int i = 0; i < state->imageCount; i++){ vkDestroyFramebuffer(state->device, state->swapchainFramebuffers[i], NULL); }
     for(int i = 0; i < state->imageCount; i++){ vkDestroyImageView(state->device, state->swapchainImageViews[i], NULL); }
     vkDestroySwapchainKHR(state->device, state->swapchain, NULL);
+    destroyRenderFinishedSemaphores(state);
     free(state->swapchainFramebuffers); state->swapchainFramebuffers = NULL;
     free(state->swapchainImageViews); state->swapchainImageViews = NULL;
 }
@@ -763,7 +797,8 @@ void drawFrame(struct VkState* state){
     recordCommandBuffer(state, state->commandBuffers[state->currentFrame], imageIndex);
 
     VkSemaphore waitSemaphores[] = {state->imageAvailableSemaphores[state->currentFrame]};
-    VkSemaphore signalSemaphores[] = {state->renderFinishedSemaphores[state->currentFrame]};
+    VkSemaphore renderFinishedSemaphore = state->renderFinishedSemaphores[imageIndex];
+    VkSemaphore signalSemaphores[] = {renderFinishedSemaphore};
     VkPipelineStageFlags waitStages[] = {VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT};
     VkSubmitInfo submitInfo = {
         .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
@@ -829,7 +864,6 @@ int main(void){
     createCommandPool(&state);
     createCommandBuffers(&state);
     createSyncObjects(&state);
-
     renderLoop(&state);
     cleanup(&state);
 }
@@ -841,10 +875,20 @@ void cleanup(struct VkState* state){
     vkDestroyPipelineLayout(state->device, state->pipelineLayout, NULL);
     vkDestroyRenderPass(state->device, state->renderPass, NULL);
 
-    for(int i = 0; i < state->MAX_FRAMES_IN_FLIGHT; i++){
-        vkDestroySemaphore(state->device, state->imageAvailableSemaphores[i], NULL);
-        vkDestroySemaphore(state->device, state->renderFinishedSemaphores[i], NULL);
-        vkDestroyFence(state->device, state->inFlightFences[i], NULL);
+    if(state->imageAvailableSemaphores != NULL){
+        for(uint32_t i = 0; i < state->MAX_FRAMES_IN_FLIGHT; i++){
+            if(state->imageAvailableSemaphores[i] != VK_NULL_HANDLE){
+                vkDestroySemaphore(state->device, state->imageAvailableSemaphores[i], NULL);
+            }
+        }
+    }
+
+    if(state->inFlightFences != NULL){
+        for(uint32_t i = 0; i < state->MAX_FRAMES_IN_FLIGHT; i++){
+            if(state->inFlightFences[i] != VK_NULL_HANDLE){
+                vkDestroyFence(state->device, state->inFlightFences[i], NULL);
+            }
+        }
     }
 
     vkDestroyShaderModule(state->device, state->vertexShader, NULL);
@@ -864,8 +908,7 @@ void cleanup(struct VkState* state){
     free(state->swapchainFramebuffers); state->swapchainFramebuffers = NULL;
     free(state->commandBuffers); state->commandBuffers = NULL;
     free(state->imageAvailableSemaphores); state->imageAvailableSemaphores = NULL;
-    free(state->renderFinishedSemaphores); state->renderFinishedSemaphores = NULL;
     free(state->inFlightFences); state->inFlightFences = NULL;
-    
+
     glfwTerminate();
 }

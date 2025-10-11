@@ -1,0 +1,112 @@
+• Proposed Change main.c (+32 -0)
+    302
+    303   +static void destroyRenderFinishedSemaphores(struct VkState* state){
+    304   +    if(state->renderFinishedSemaphores == NULL){
+    305   +        return;
+    306   +    }
+    307   +
+    308   +    for(uint32_t i = 0; i < state->imageCount; i++){
+    309   +        if(state->renderFinishedSemaphores[i] != VK_NULL_HANDLE){
+    310   +            vkDestroySemaphore(state->device, state->renderFinishedSemaphores[i], NULL);
+    311   +        }
+    312   +    }
+    313   +
+    314   +    free(state->renderFinishedSemaphores);
+    315   +    state->renderFinishedSemaphores = NULL;
+    316   +}
+    317   +
+    318   +static void createRenderFinishedSemaphores(struct VkState* state){
+    319   +    assert(state->renderFinishedSemaphores == NULL);
+    320   +    if(state->imageCount == 0){
+    321   +        return;
+    322   +    }
+    323   +
+    324   +    state->renderFinishedSemaphores = malloc(state->imageCount * sizeof(VkSemaphore));
+    325   +
+    326   +    VkSemaphoreCreateInfo semaphoreCreateInfo = {
+    327   +        .sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO,
+    328   +    };
+    329   +
+    330   +    for(uint32_t i = 0; i < state->imageCount; i++){
+    331   +        assert(vkCreateSemaphore(state->device, &semaphoreCreateInfo, NULL, &state->renderFinishedSemaphores[i]) == VK_SUCCESS);
+    332   +    }
+    333   +}
+    334   +
+    335    void createSwapChain(struct VkState* state){
+
+• Change Approved main.c (+32 -0)
+
+• Proposed Change main.c (+2 -0)
+    401        vkGetSwapchainImagesKHR(state->device, state->swapchain, &state->imageCount, state->swapchainImages);
+    402   +
+    403   +    createRenderFinishedSemaphores(state);
+    404    }
+
+• Change Approved main.c (+2 -0)
+
+• Proposed Change main.c (+0 -2)
+    740        state->imageAvailableSemaphores = malloc(state->MAX_FRAMES_IN_FLIGHT * sizeof(VkSemaphore));
+    741   -    state->renderFinishedSemaphores = malloc(state->MAX_FRAMES_IN_FLIGHT * sizeof(VkSemaphore));
+    741        state->inFlightFences =  malloc(state->MAX_FRAMES_IN_FLIGHT * sizeof(VkFence));
+    ⋮
+    751            assert(vkCreateSemaphore(state->device, &semaphoreCreateInfo, NULL, &state->imageAvailableSemaphores[i]) == VK_SUCCESS);
+    753   -        assert(vkCreateSemaphore(state->device, &semaphoreCreateInfo, NULL, &state->renderFinishedSemaphores[i]) == VK_SUCCESS);
+    752            assert(vkCreateFence(state->device, &fenceCreateInfo, NULL, &state->inFlightFences[i]) == VK_SUCCESS);
+
+• Change Approved main.c (+0 -2)
+
+• Proposed Change main.c (+1 -0)
+    759        vkDestroySwapchainKHR(state->device, state->swapchain, NULL);
+    760   +    destroyRenderFinishedSemaphores(state);
+    761        free(state->swapchainFramebuffers); state->swapchainFramebuffers = NULL;
+
+• Change Approved main.c (+1 -0)
+
+• Proposed Change main.c (+2 -1)
+    799        VkSemaphore waitSemaphores[] = {state->imageAvailableSemaphores[state->currentFrame]};
+    800   -    VkSemaphore signalSemaphores[] = {state->renderFinishedSemaphores[state->currentFrame]};
+    800   +    VkSemaphore renderFinishedSemaphore = state->renderFinishedSemaphores[imageIndex];
+    801   +    VkSemaphore signalSemaphores[] = {renderFinishedSemaphore};
+    802        VkPipelineStageFlags waitStages[] = {VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT};
+
+• Change Approved main.c (+2 -1)
+
+• Explored
+  └ Read main.c
+
+• Proposed Change main.c (+15 -6)
+    877
+    878   -    for(int i = 0; i < state->MAX_FRAMES_IN_FLIGHT; i++){
+    879   -        vkDestroySemaphore(state->device, state->imageAvailableSemaphores[i], NULL);
+    880   -        vkDestroySemaphore(state->device, state->renderFinishedSemaphores[i], NULL);
+    881   -        vkDestroyFence(state->device, state->inFlightFences[i], NULL);
+    878   +    if(state->imageAvailableSemaphores != NULL){
+    879   +        for(uint32_t i = 0; i < state->MAX_FRAMES_IN_FLIGHT; i++){
+    880   +            if(state->imageAvailableSemaphores[i] != VK_NULL_HANDLE){
+    881   +                vkDestroySemaphore(state->device, state->imageAvailableSemaphores[i], NULL);
+    882   +            }
+    883   +        }
+    884        }
+    885
+    886   +    if(state->inFlightFences != NULL){
+    887   +        for(uint32_t i = 0; i < state->MAX_FRAMES_IN_FLIGHT; i++){
+    888   +            if(state->inFlightFences[i] != VK_NULL_HANDLE){
+    889   +                vkDestroyFence(state->device, state->inFlightFences[i], NULL);
+    890   +            }
+    891   +        }
+    892   +    }
+    893   +
+    894        vkDestroyShaderModule(state->device, state->vertexShader, NULL);
+    ⋮
+    910        free(state->imageAvailableSemaphores); state->imageAvailableSemaphores = NULL;
+    901   -    free(state->renderFinishedSemaphores); state->renderFinishedSemaphores = NULL;
+    911        free(state->inFlightFences); state->inFlightFences = NULL;
+    903   -
+    912   +
+    913        glfwTerminate();
+
+• Change Approved main.c (+15 -6)
+
+    833   -    state->currentFrame = (state->currentFrame + 1) % (state->MAX_FRAMES_IN_FLIGHT);
+    833   +    state->currentFrame = (state->currentFrame + 1) % state->MAX_FRAMES_IN_FLIGHT;
+
