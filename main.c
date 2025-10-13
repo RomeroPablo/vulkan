@@ -31,11 +31,11 @@ struct VkState{
     VkQueue graphicsQueue;
     VkQueue computeQueue;
     VkSurfaceKHR surface;
-    struct SwapchainInfo{
+    struct surfaceInfo{
         VkSurfaceCapabilitiesKHR capabilities;
         VkSurfaceFormatKHR surfaceFormat;
         VkPresentModeKHR presentMode;
-    }swapchainInfo;
+    }surfaceInfo;
     VkExtent2D extent;
     uint32_t imageCount;
     VkSwapchainKHR swapchain;
@@ -334,7 +334,7 @@ static void createRenderFinishedSemaphores(struct VkState* state){
 
 void createSwapChain(struct VkState* state){
     printf("[+] Creating Swapchain\n");
-    vkGetPhysicalDeviceSurfaceCapabilitiesKHR(state->physicalDevice, state->surface, &state->swapchainInfo.capabilities);
+    vkGetPhysicalDeviceSurfaceCapabilitiesKHR(state->physicalDevice, state->surface, &state->surfaceInfo.capabilities);
 
     uint32_t formatCount = 0;
     vkGetPhysicalDeviceSurfaceFormatsKHR(state->physicalDevice, state->surface, &formatCount, NULL);
@@ -343,11 +343,11 @@ void createSwapChain(struct VkState* state){
     for(int i = 0; i < formatCount; i++){
         if((formats[i].format == VK_FORMAT_B8G8R8A8_SRGB) && (formats[i].colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR)){
             printf("[!] Found desired format!\n");
-            state->swapchainInfo.surfaceFormat = formats[i];
+            state->surfaceInfo.surfaceFormat = formats[i];
             break;
         }
     }
-    printf("[+] Using Swapchain format %i with colorspace %i\n", state->swapchainInfo.surfaceFormat.format, state->swapchainInfo.surfaceFormat.colorSpace);
+    printf("[+] Using Surface format %i with colorspace %i\n", state->surfaceInfo.surfaceFormat.format, state->surfaceInfo.surfaceFormat.colorSpace);
 
     uint32_t presentCount = 0;
     vkGetPhysicalDeviceSurfacePresentModesKHR(state->physicalDevice, state->surface, &presentCount, NULL);
@@ -355,41 +355,41 @@ void createSwapChain(struct VkState* state){
     vkGetPhysicalDeviceSurfacePresentModesKHR(state->physicalDevice, state->surface, &presentCount, presentModes);
     for(int i = 0; i < presentCount; i++){
         if(presentModes[i] == VK_PRESENT_MODE_IMMEDIATE_KHR){
-            state->swapchainInfo.presentMode = presentModes[i];
+            state->surfaceInfo.presentMode = presentModes[i];
             break;
         }
     }
-    printf("[+] Using present mode %i\n", state->swapchainInfo.presentMode);
+    printf("[+] Using surface present mode %i\n", state->surfaceInfo.presentMode);
 
-    if(state->swapchainInfo.capabilities.currentExtent.height != UINT32_MAX){
-        state->extent = state->swapchainInfo.capabilities.currentExtent;
+    if(state->surfaceInfo.capabilities.currentExtent.height != UINT32_MAX){
+        state->extent = state->surfaceInfo.capabilities.currentExtent;
     } else {
         int width, height;
         glfwGetFramebufferSize(state->window, &width, &height);
         state->extent.width = (uint32_t)(width);
         state->extent.height = (uint32_t)(height);
         state->extent.width = clamp(state->extent.width, 
-                state->swapchainInfo.capabilities.minImageExtent.width, state->swapchainInfo.capabilities.maxImageExtent.width);
+                state->surfaceInfo.capabilities.minImageExtent.width, state->surfaceInfo.capabilities.maxImageExtent.width);
         state->extent.height = clamp(state->extent.height, 
-                state->swapchainInfo.capabilities.minImageExtent.height, state->swapchainInfo.capabilities.maxImageExtent.height);
+                state->surfaceInfo.capabilities.minImageExtent.height, state->surfaceInfo.capabilities.maxImageExtent.height);
     }
-    state->imageCount = state->swapchainInfo.capabilities.minImageCount + 1;
+    state->imageCount = state->surfaceInfo.capabilities.minImageCount + 1;
 
     VkSwapchainCreateInfoKHR createInfo = {
         .sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR,
         .surface = state->surface,
-        .minImageCount = state->swapchainInfo.capabilities.minImageCount,
-        .imageFormat = state->swapchainInfo.surfaceFormat.format,
-        .imageColorSpace = state->swapchainInfo.surfaceFormat.colorSpace,
+        .minImageCount = state->surfaceInfo.capabilities.minImageCount,
+        .imageFormat = state->surfaceInfo.surfaceFormat.format,
+        .imageColorSpace = state->surfaceInfo.surfaceFormat.colorSpace,
         .imageExtent = state->extent,
         .imageArrayLayers = 1,
         .imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
         .imageSharingMode = VK_SHARING_MODE_EXCLUSIVE,
         .queueFamilyIndexCount = state->queueFamilyIndices.graphicsFamily,
         .pQueueFamilyIndices = NULL,
-        .preTransform = state->swapchainInfo.capabilities.currentTransform,
+        .preTransform = state->surfaceInfo.capabilities.currentTransform,
         .compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR,
-        .presentMode = state->swapchainInfo.presentMode,
+        .presentMode = state->surfaceInfo.presentMode,
         .clipped = VK_TRUE,
         .oldSwapchain = VK_NULL_HANDLE
     };
@@ -411,7 +411,7 @@ void createImageViews(struct VkState* state){
             .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
             .image = state->swapchainImages[i],
             .viewType = VK_IMAGE_VIEW_TYPE_2D,
-            .format = state->swapchainInfo.surfaceFormat.format,
+            .format = state->surfaceInfo.surfaceFormat.format,
             .components.r = VK_COMPONENT_SWIZZLE_IDENTITY,
             .components.g = VK_COMPONENT_SWIZZLE_IDENTITY,
             .components.b = VK_COMPONENT_SWIZZLE_IDENTITY,
@@ -430,7 +430,7 @@ void createImageViews(struct VkState* state){
 void createRenderPass(struct VkState* state){
     printf("[+] Creating Render Pass\n");
     VkAttachmentDescription colorAttachment = {
-        .format = state->swapchainInfo.surfaceFormat.format,
+        .format = state->surfaceInfo.surfaceFormat.format,
         .samples = VK_SAMPLE_COUNT_1_BIT,
         .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
         .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
