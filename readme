@@ -69,55 +69,55 @@ thus we have the Compute Unit
 
 *we will assume userspace, and using existing API*
 
-When we start writing some vukan code,                                                                                       
-The first thing that we do is make a couple of requests to our operating system                                              
-We go ahead and request a surface that we will render on                                                                     
- This varies by OS, but is encapsulated in a VkSurface                                                                       
- ┌──                       ──┐     ┌─────────┐                                                                               
- │XCB, wl_surface, HWND, view├────►│VkSurface│                                                                               
- └──                       ──┘     └─────────┘                                                                               
-From the VkSurface that we recieve, we can extrapolate                                                                       
-┌────────────────────┐                                                                                                       
-│Surface Capabilities│ - Image Count, Image Extent (x,y), transformations, ...                                               
-└────────────────────┘                                                                                                       
-┌───────────────┐                                                                                                            
-│Surface Formats│      - Color ordering and Range                                                                            
-└───────────────┘                                                                                                            
-┌─────────────┐                                                                                                              
-│Present Modes│        - Immediate presentation, Mailbox, FIFO, ...                                                          
-└─────────────┘                                                                                                              
-All though this is not all immediately useful, nor is the purpose of these details                                           
- we will keep these in the back of our mind until later                                                                      
-                                                                                                                             
-We then need to request for the graphics hardware present on the system                                                      
-On Linux, this may be through Mesa3D (AMD), or Nouveau (NVIDIA)                                                              
-This provides us context for the device that we are running on                                                               
-when making this request, we also make sure that the device supports any extra features we might need                        
-These are specified through Vulkan Extensions and Vulkan Layers                                                              
-                                                                                                                             
-This is all encapsulated with a Vulkan Instance Type, which exposes the Physical Hardware on the system                      
-                                                 ┌─────────────────┐                                                         
-┌───────────────────────────┐                 ┌─►│Physical Device 0│                                                         
-│VK_LAYER_KHRONOS_validation│                 │  └─────────────────┘                                                         
-│VK_KHR_surface             │    ┌──────────┐ │  ┌─────────────────┐                                                         
-│VK_KHR_xcb_surface         ├───►│VkInstance├─┼─►│Physical Device 1│                                                         
-│VK_EXT_debug_utils         │    └──────────┘ │  └─────────────────┘                                                         
-│...                        │                 │  ┌─────────────────┐                                                         
-└───────────────────────────┘                 └─►│      ....       │                                                         
-                                                 └─────────────────┘                                                         
-┌───────────────┐                                                                                                            
-│Physical Device│ A physical device exposes various interfaces                                                               
-└┬──────────────┘ These interfaces can be used to understand the capabilites of the hardware available,                      
- │                  and make a decision with what device to move forward with                                                
- │                                                                                                                           
- │ ┌──────────────────────────┐                                                                                              
- ├►│Physical Device Properites│ - Exposes the device Name, Type, ID, Max Resource Limits, ...                                
- │ └──────────────────────────┘                                                                                              
- │ ┌────────────────────────┐                                                                                                
- ├►│Physical Device Features│   - Exposes support for features such as Tesellation Shaders, Multiviewports, Sparse Memory ...
- │ └────────────────────────┘                                                                                                
- │ ┌───────────────────────┐                                                                                                 
- └►│Queue Family Properties│    - Exposes, well, queue families                                                              
-   └───────────────────────┘                                                                                                 
-                                                                                                                             
-VkQueues are the interface that we will be using to submit work to the GPU and present images to the surface
+When we start writing some vukan code,                                                                            
+The first thing that we do is make a couple of requests to our operating system                                   
+We go ahead and request a surface that we will render on                                                          
+ This varies by OS, but is encapsulated in a VkSurface                                                            
+ ┌──                       ──┐     ┌─────────┐                                                                    
+ │XCB, wl_surface, HWND, view├────►│VkSurface│                                                                    
+ └──                       ──┘     └─────────┘                                                                    
+From the VkSurface that we recieve, we can extrapolate                                                            
+┌────────────────────┐                                                                                            
+│Surface Capabilities│ - Image Count, Image Extent (x,y), transformations, ...                                    
+└────────────────────┘                                                                                            
+┌───────────────┐                                                                                                 
+│Surface Formats│      - Color ordering and Range                                                                 
+└───────────────┘                                                                                                 
+┌─────────────┐                                                                                                   
+│Present Modes│        - Immediate presentation, Mailbox, FIFO, ...                                               
+└─────────────┘                                                                                                   
+All though this is not all immediately useful, nor is the purpose of these details                                
+ we will keep these in the back of our mind until later                                                           
+                                                                                                                  
+We then need to request for the graphics hardware present on the system                                           
+On Linux, this may be through Mesa3D (AMD), or Nouveau (NVIDIA)                                                   
+This provides us context for the device that we are running on                                                    
+when making this request, we also make sure that the device supports any extra features we might need             
+These are specified through Vulkan Extensions and Vulkan Layers                                                   
+                                                                                                                  
+This is all encapsulated with a Vulkan Instance Type, which exposes the Physical Hardware on the system           
+                                                 ┌─────────────────┐                                              
+┌───────────────────────────┐                 ┌─►│Physical Device 0│                                              
+│VK_LAYER_KHRONOS_validation│                 │  └─────────────────┘                                              
+│VK_KHR_surface             │    ┌──────────┐ │  ┌─────────────────┐                                              
+│VK_KHR_xcb_surface         ├───►│VkInstance├─┼─►│Physical Device 1│                                              
+│VK_EXT_debug_utils         │    └──────────┘ │  └─────────────────┘                                              
+│...                        │                 │  ┌─────────────────┐                                              
+└───────────────────────────┘                 └─►│      ....       │                                              
+                                                 └─────────────────┘                                              
+┌───────────────┐                                                                                                 
+│Physical Device│ A physical device exposes various interfaces                                                    
+└┬──────────────┘ These interfaces can be used to understand the capabilites of the hardware available,           
+ │                  and make a decision with what device to move forward with                                     
+ │                                                                                                                
+ │ ┌──────────────────────────┐                                                                                   
+ ├►│Physical Device Properites│ - Exposes the device Name, Type, ID, Max Resource Limits, ...                     
+ │ └──────────────────────────┘                                                                                   
+ │ ┌────────────────────────┐                                                                                     
+ ├►│Physical Device Features│   - Exposes features such as Tesellation Shaders, Multiviewports, Sparse Memory ... 
+ │ └────────────────────────┘                                                                                     
+ │ ┌───────────────────────┐                                                                                      
+ └►│Queue Family Properties│    - Exposes, well, queue families                                                   
+   └───────────────────────┘                                                                                      
+                                                                                                                  
+VkQueues are the interface that we will be using to submit work to the GPU and present images to the surface      
