@@ -4,5 +4,5 @@ rm -f assets/vert.spv
 rm -f assets/frag.spv
 glslc assets/vertexShader.vert -o assets/vert.spv
 glslc assets/fragmentShader.frag -o assets/frag.spv
-gcc -std=c17 -g -O3 main.c -lglfw -lvulkan -o vulkan
+gcc -std=c17 -g -O3 main.c -lglfw -lvulkan -lcglm -o vulkan
 ./vulkan
