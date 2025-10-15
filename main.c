@@ -9,7 +9,10 @@
 #include <stdlib.h>
 
 #define CIMGUI_DEFINE_ENUMS_AND_STRUCTS
+#define CIMGUI_USE_VULKAN
+#define CIMGUI_USE_GLFW
 #include "external/cimgui.h"
+#include "external/cimgui_impl.h"
 
 struct VkState{
     struct Resolution{
@@ -57,6 +60,8 @@ struct VkState{
     uint32_t MAX_FRAMES_IN_FLIGHT;
     uint32_t currentFrame;
     bool framebufferResized;
+
+    VkDescriptorPool imguiDescriptorPool;
 
     VkDebugUtilsMessengerEXT debugMessenger;
 };
@@ -834,14 +839,27 @@ void renderLoop(struct VkState* state){
     vkDeviceWaitIdle(state->device);
 }
 
+void initGui(struct VkState* state){
+    igCreateContext(NULL);
+    ImGuiIO * io = igGetIO_Nil();
+    printf("%s\n", io->IniFilename);
+    ImGui_ImplGlfw_InitForVulkan(state->window, true);
+    ImGui_ImplVulkan_InitInfo initInfo = {
+        .ApiVersion = VK_MAKE_VERSION(1, 0, 0),
+        .Instance = state->instance,
+        .PhysicalDevice = state->physicalDevice,
+        .Device = state->device,
+        .Queue = state->graphicsQueue,
+        .QueueFamily = state->queueFamilyIndices.graphicsFamily,
+        // etc ....
+    };
+    ImGui_ImplVulkan_Init(&initInfo);
+}
+
 int main(void){
     printf("[+] Running Vulkan Program\n");
     struct VkState state;
     memset(&state, 0, sizeof(state));
-
-    igCreateContext(NULL);
-    ImGuiIO * io = igGetIO_Nil();
-    printf("%s\n", io->IniFilename);
 
     initWindow(&state);
     createInstance(&state);
@@ -860,6 +878,9 @@ int main(void){
     createCommandPool(&state);
     createCommandBuffers(&state);
     createSyncObjects(&state);
+
+    initGui(&state);
+
     renderLoop(&state);
     cleanup(&state);
 }

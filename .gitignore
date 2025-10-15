@@ -2,3 +2,4 @@ vulkan
 *.spv
 *.o
 build
+.cache

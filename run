@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-rm -f vulkan main.o assets/vert.spv assets/frag.spv
+rm -f vulkan build/main.o assets/vert.spv assets/frag.spv
 mkdir -p build
 
 glslc assets/vertexShader.vert -o assets/vert.spv
@@ -38,8 +38,8 @@ else
     echo "using object cache..."
 fi
 
-gcc -std=c17 -g -O3 -Iexternal -Iexternal/imgui -c main.c -o main.o
+gcc -std=c17 -g -O3 -Iexternal -Iexternal/imgui -c main.c -o build/main.o
 
-g++ main.o build/*.o -lX11 -lglfw -lvulkan -ldl -lpthread -o vulkan
+g++ build/*.o -lX11 -lglfw -lvulkan -ldl -lpthread -o vulkan
 
 ./vulkan
