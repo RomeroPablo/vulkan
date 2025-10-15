@@ -1,8 +1,45 @@
 #!/bin/bash
-rm -f vulkan
-rm -f assets/vert.spv
-rm -f assets/frag.spv
+set -e
+
+rm -f vulkan main.o assets/vert.spv assets/frag.spv
+mkdir -p build
+
 glslc assets/vertexShader.vert -o assets/vert.spv
 glslc assets/fragmentShader.frag -o assets/frag.spv
-gcc -std=c17 -g -O3 main.c -lglfw -lvulkan -o vulkan
+
+CXXFLAGS=(
+  -std=c++17
+  -Iexternal
+  -Iexternal/imgui
+  -DIMGUI_IMPL_API='extern "C"'
+  -DCIMGUI_USE_GLFW
+  -DCIMGUI_USE_VULKAN
+)
+
+if [ ! -f build/imgui_build_done ]; then
+    echo "Building ImGui/CImGui objects..."
+    SRCS=(
+      external/cimgui.cpp
+      external/cimgui_impl.cpp
+      external/imgui/imgui.cpp
+      external/imgui/imgui_draw.cpp
+      external/imgui/imgui_widgets.cpp
+      external/imgui/imgui_tables.cpp
+      external/imgui/imgui_demo.cpp
+      external/imgui_impl_glfw.cpp
+      external/imgui_impl_vulkan.cpp
+    )
+    for src in "${SRCS[@]}"; do
+        out="build/$(basename "${src%.cpp}.o")"
+        g++ "${CXXFLAGS[@]}" -c "$src" -o "$out"
+    done
+    touch build/imgui_build_done
+else
+    echo "using object cache..."
+fi
+
+gcc -std=c17 -g -O3 -Iexternal -Iexternal/imgui -c main.c -o main.o
+
+g++ main.o build/*.o -lX11 -lglfw -lvulkan -ldl -lpthread -o vulkan
+
 ./vulkan

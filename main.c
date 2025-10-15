@@ -8,6 +8,9 @@
 #include <stdbool.h>
 #include <stdlib.h>
 
+#define CIMGUI_DEFINE_ENUMS_AND_STRUCTS
+#include "external/cimgui.h"
+
 struct VkState{
     struct Resolution{
         uint32_t width;
@@ -21,8 +24,7 @@ struct VkState{
     float queuePriority;
     struct QueueFamilyIndices{
         uint32_t graphicsFamily;
-        uint32_t computeFamily;
-    }queueFamilyIndices;
+        uint32_t computeFamily; }queueFamilyIndices;
     struct QueueCount{
         uint32_t graphics;
         uint32_t compute;
@@ -836,6 +838,10 @@ int main(void){
     printf("[+] Running Vulkan Program\n");
     struct VkState state;
     memset(&state, 0, sizeof(state));
+
+    igCreateContext(NULL);
+    ImGuiIO * io = igGetIO_Nil();
+    printf("%s\n", io->IniFilename);
 
     initWindow(&state);
     createInstance(&state);

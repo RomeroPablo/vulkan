@@ -1,2 +1,4 @@
 vulkan
 *.spv
+*.o
+build
