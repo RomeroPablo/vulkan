@@ -853,7 +853,7 @@ void initGui(struct VkState* state){
         .QueueFamily = state->queueFamilyIndices.graphicsFamily,
         // etc ....
     };
-    ImGui_ImplVulkan_Init(&initInfo);
+    //ImGui_ImplVulkan_Init(&initInfo);
 }
 
 int main(void){
