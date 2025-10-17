@@ -8,6 +8,7 @@
 #include <stdio.h>
 #include <stdbool.h>
 #include <stdlib.h>
+#include <unistd.h>
 
 struct Vertex {
     vec2 pos;
@@ -17,10 +18,14 @@ struct Vertex {
 struct VertexState {
     struct Vertex* vertices;
     uint32_t vertexCount;
+    uint16_t* indices;
+    uint16_t indexCount;
     VkVertexInputBindingDescription bindingDescription;
     VkVertexInputAttributeDescription* attributeDescriptions;
     VkBuffer vertexBuffer;
     VkDeviceMemory vertexBufferMemory;
+    VkBuffer indexBuffer;
+    VkDeviceMemory indexBufferMemory;
 };
 
 struct VkState{
@@ -104,22 +109,23 @@ VkResult CreateDebugUtilsMessengerEXT(VkInstance instance,
     }
 }
 
+void populateDebugMessengerCreateInfo(VkDebugUtilsMessengerCreateInfoEXT* createInfo){
+    createInfo->sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT;
+    createInfo->messageSeverity = VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT |
+                                  VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT |
+                                  VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT;
+
+    createInfo->messageType =  VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT | 
+                               VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT | 
+                               VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT;
+    createInfo->pfnUserCallback = debugCallback;
+    createInfo->pUserData = NULL;
+}
+
 void setupDebugMessenger(struct VkState* state){
     printf("[+] Setting up Debug Messenger\n");
-    VkDebugUtilsMessengerCreateInfoEXT createInfo = {
-        .sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT,
-
-        .messageSeverity = VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT |
-                           VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT |
-                           VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT,
-
-        .messageType =  VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT | 
-                        VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT | 
-                        VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT,
-        .pfnUserCallback = debugCallback,
-        .pUserData = NULL
-    };
-
+    VkDebugUtilsMessengerCreateInfoEXT createInfo = {0};
+    populateDebugMessengerCreateInfo(&createInfo);
     assert(CreateDebugUtilsMessengerEXT(state->instance, &createInfo, 
                 NULL, &state->debugMessenger) == VK_SUCCESS);
 }
@@ -173,7 +179,8 @@ void initWindow(struct VkState* state){
 
 void createInstance(struct VkState* state){
     printf("[+] Creating Vulkan Instance\n");
-    assert(checkValidationLayerSupport);
+    bool val = checkValidationLayerSupport();
+
     VkApplicationInfo appInfo = {
         .sType = VK_STRUCTURE_TYPE_APPLICATION_INFO,
         .pApplicationName = "Vulkan",
@@ -193,6 +200,9 @@ void createInstance(struct VkState* state){
     uint32_t glfwExtensionsCount = 0;
     const char** glfwExtensions;
     glfwExtensions = glfwGetRequiredInstanceExtensions(&glfwExtensionsCount);
+    if (!glfwExtensions || glfwExtensionsCount == 0) {
+        fprintf(stderr, "GLFW did not report required instance extensions\n");
+    }
     uint32_t enabledExtensionCount = glfwExtensionsCount + 1;
     const char* enabledExtensions[enabledExtensionCount];
     memcpy(enabledExtensions, glfwExtensions, sizeof(char*) * glfwExtensionsCount);
@@ -207,9 +217,14 @@ void createInstance(struct VkState* state){
         .pApplicationInfo = &appInfo,
         .enabledExtensionCount = enabledExtensionCount,
         .ppEnabledExtensionNames = enabledExtensions,
-        .enabledLayerCount = validationLayerCount,
-        .ppEnabledLayerNames = validationLayers
+        .enabledLayerCount = val ? validationLayerCount : 0,
+        .ppEnabledLayerNames = val ? validationLayers : NULL,
     };
+    VkDebugUtilsMessengerCreateInfoEXT debugCreateInfo;
+    if(val){
+        populateDebugMessengerCreateInfo(&debugCreateInfo);
+        createInfo.pNext = (const void*)&debugCreateInfo;
+    }
 
     VkResult result = vkCreateInstance(&createInfo, NULL, &state->instance);
     assert(result == VK_SUCCESS);
@@ -219,7 +234,7 @@ void pickPhysicalDevice(struct VkState* state){
     printf("[+] Picking Physical Device\n");
     uint32_t deviceCount = 0;
     vkEnumeratePhysicalDevices(state->instance, &deviceCount, NULL);
-    VkPhysicalDevice devices[deviceCount];
+    VkPhysicalDevice* devices = malloc(sizeof(VkPhysicalDevice) * deviceCount);
     vkEnumeratePhysicalDevices(state->instance, &deviceCount, devices);
     state->physicalDevice = devices[0];
 
@@ -229,6 +244,7 @@ void pickPhysicalDevice(struct VkState* state){
     vkGetPhysicalDeviceFeatures(state->physicalDevice, &state->physicalDeviceFeatures);
 
     vkGetPhysicalDeviceMemoryProperties(state->physicalDevice, &state->physicalMemoryProperties);
+    free(devices);
 }
 
 void setupQueues(struct VkState* state){
@@ -296,8 +312,10 @@ void createLogicalDevice(struct VkState* state){
         .ppEnabledExtensionNames = enabledExtensions,
         .enabledExtensionCount = enabledExtensionCount,
         .pEnabledFeatures = &enabledFeatures,
-        .ppEnabledLayerNames = &validationLayer,
-        .enabledLayerCount = enabledLayerCount,
+//        .ppEnabledLayerNames = &validationLayer,
+//        .enabledLayerCount = enabledLayerCount,
+        .ppEnabledLayerNames = NULL,
+        .enabledLayerCount = 0
     };
     assert(vkCreateDevice(state->physicalDevice, &createInfo, NULL, &state->device) == VK_SUCCESS);
 }
@@ -310,7 +328,11 @@ void retrieveQueues(struct VkState* state){
 
 void createSurface(struct VkState* state){
     printf("[+] Creating Surface\n");
-    assert(glfwCreateWindowSurface(state->instance, state->window, NULL, &state->surface) == VK_SUCCESS);
+    VkResult result = glfwCreateWindowSurface(state->instance, state->window, NULL, &state->surface);
+    if(result != VK_SUCCESS) {
+        fprintf(stderr, "glfwCreateWindowSurface failed: %d\n", result);
+        return;
+    }
     VkBool32 presentSupport = false;
     vkGetPhysicalDeviceSurfaceSupportKHR(state->physicalDevice, state->queueFamilyIndices.graphicsFamily, state->surface, &presentSupport);
     assert(presentSupport);
@@ -494,16 +516,24 @@ void createRenderPass(struct VkState* state){
 }
 
 void initVertexState(struct VkState* state){
-    uint32_t vertexCount = 3;
-    state->vertexState.vertexCount = vertexCount;
-    state->vertexState.vertices = malloc(sizeof(struct Vertex) * vertexCount);
+    state->vertexState.vertexCount = 4;
+    state->vertexState.vertices = malloc(sizeof(struct Vertex) * state->vertexState.vertexCount);
 
-    struct Vertex temp[] = {
-        {{ 0.0f, -0.5f}, {1.0f, 1.0f, 1.0f}},
-        {{ 0.5f,  0.5f}, {0.0f, 1.0f, 0.0f}},
-        {{-0.5f,  0.5f}, {0.0f, 0.0f, 1.0f}},
+    struct Vertex vertTemp[] = {
+        {{-0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}},
+        {{ 0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}},
+        {{ 0.5f,  0.5f}, {0.0f, 0.0f, 1.0f}},
+        {{-0.5f,  0.5f}, {1.0f, 1.0f, 1.0f}},
     };
-    memcpy(state->vertexState.vertices, temp, sizeof(temp));
+    memcpy(state->vertexState.vertices, vertTemp, sizeof(vertTemp));
+
+    state->vertexState.indexCount = 6;
+    state->vertexState.indices = malloc(sizeof(state->vertexState.indices) * state->vertexState.indexCount);
+
+    uint16_t indices[] = {
+        0, 1, 2, 2, 3, 0
+    };
+    memcpy(state->vertexState.indices, indices, sizeof(indices));
 
     state->vertexState.bindingDescription.binding = 0;
     state->vertexState.bindingDescription.stride = sizeof(struct Vertex);
@@ -817,30 +847,60 @@ void copyBuffer(struct VkState* state, VkBuffer src, VkBuffer dst, VkDeviceSize 
 
 void createVertexBuffer(struct VkState* state){
     printf("[+] Creating Vertex Buffer\n");
-    VkDeviceSize size = sizeof(struct Vertex) * state->vertexState.vertexCount;
+    VkDeviceSize bufferSize = sizeof(struct Vertex) * state->vertexState.vertexCount;
     VkBuffer stagingBuffer;
     VkDeviceMemory stagingBufferMemory;
     createBuffer(state, 
-            size, 
+            bufferSize, 
             VK_BUFFER_USAGE_TRANSFER_SRC_BIT, 
             VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, 
             &stagingBuffer, 
             &stagingBufferMemory);
 
     void* data;
-    vkMapMemory(state->device, stagingBufferMemory, 0, size, 0, &data);
-    memcpy(data, state->vertexState.vertices, size);
+    vkMapMemory(state->device, stagingBufferMemory, 0, bufferSize, 0, &data);
+    memcpy(data, state->vertexState.vertices, bufferSize);
     vkUnmapMemory(state->device, stagingBufferMemory);
 
     createBuffer(state, 
-        size,
+        bufferSize,
         VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
         VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
         &state->vertexState.vertexBuffer,
         &state->vertexState.vertexBufferMemory
         );
 
-    copyBuffer(state, stagingBuffer, state->vertexState.vertexBuffer, size);
+    copyBuffer(state, stagingBuffer, state->vertexState.vertexBuffer, bufferSize);
+
+    vkDestroyBuffer(state->device, stagingBuffer, NULL);
+    vkFreeMemory(state->device, stagingBufferMemory, NULL);
+}
+
+void createIndexBuffer(struct VkState* state){
+    printf("[+] Creating Index Buffer\n");
+    VkDeviceSize bufferSize = sizeof(state->vertexState.indices) * state->vertexState.indexCount;
+    VkBuffer stagingBuffer;
+    VkDeviceMemory stagingBufferMemory;
+    createBuffer(state, 
+            bufferSize, 
+            VK_BUFFER_USAGE_TRANSFER_SRC_BIT, 
+            VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, 
+            &stagingBuffer, 
+            &stagingBufferMemory);
+
+    void* data;
+    vkMapMemory(state->device, stagingBufferMemory, 0, bufferSize, 0, &data);
+    memcpy(data, state->vertexState.indices, bufferSize);
+    vkUnmapMemory(state->device, stagingBufferMemory);
+
+    createBuffer(state, 
+            bufferSize, 
+            VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT, 
+            VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, 
+            &state->vertexState.indexBuffer, 
+            &state->vertexState.indexBufferMemory);
+
+    copyBuffer(state, stagingBuffer, state->vertexState.indexBuffer, bufferSize);
 
     vkDestroyBuffer(state->device, stagingBuffer, NULL);
     vkFreeMemory(state->device, stagingBufferMemory, NULL);
@@ -898,14 +958,16 @@ void recordCommandBuffer(struct VkState* state, VkCommandBuffer commandBuffer, u
     VkBuffer vertexBuffers[] = {state->vertexState.vertexBuffer};
     VkDeviceSize offsets[] = {0};
     vkCmdBindVertexBuffers(commandBuffer, 0, 1, &state->vertexState.vertexBuffer, offsets);
+    vkCmdBindIndexBuffer(commandBuffer, state->vertexState.indexBuffer, 0, VK_INDEX_TYPE_UINT16);
 
-    vkCmdDraw(commandBuffer, state->vertexState.vertexCount, 1, 0, 0);
+    //vkCmdDraw(commandBuffer, state->vertexState.vertexCount, 1, 0, 0);
+    vkCmdDrawIndexed(commandBuffer, state->vertexState.indexCount, 1, 0, 0, 0);
     vkCmdEndRenderPass(commandBuffer);
     assert(vkEndCommandBuffer(commandBuffer) == VK_SUCCESS);
 }
 
 void createSyncObjects(struct VkState* state){
-    printf("Creating Synchronization Objects\n");
+    printf("[+] Creating Synchronization Objects\n");
     state->currentFrame = 0;
     state->imageAvailableSemaphores = malloc(state->MAX_FRAMES_IN_FLIGHT * sizeof(VkSemaphore));
     state->inFlightFences =  malloc(state->MAX_FRAMES_IN_FLIGHT * sizeof(VkFence));
@@ -1009,7 +1071,8 @@ int main(void){
 
     initWindow(&state);
     createInstance(&state);
-    setupDebugMessenger(&state);
+    if(checkValidationLayerSupport())
+        setupDebugMessenger(&state);
     pickPhysicalDevice(&state);
     setupQueues(&state);
     createLogicalDevice(&state);
@@ -1024,6 +1087,7 @@ int main(void){
     createFrameBuffers(&state);
     createCommandPool(&state);
     createVertexBuffer(&state);
+    createIndexBuffer(&state);
     createCommandBuffers(&state);
     createSyncObjects(&state);
     renderLoop(&state);
@@ -1033,10 +1097,15 @@ int main(void){
 void cleanup(struct VkState* state){
     printf("[!] Cleaning up Instance\n");
     cleanupSwapchain(state);
+    
     vkDestroyBuffer(state->device, state->vertexState.vertexBuffer, NULL);
     vkFreeMemory(state->device, state->vertexState.vertexBufferMemory, NULL);
+    vkDestroyBuffer(state->device, state->vertexState.indexBuffer, NULL);
+    vkFreeMemory(state->device, state->vertexState.indexBufferMemory, NULL);
+
     vkDestroyPipeline(state->device, state->graphicsPipeline, NULL);
     vkDestroyPipelineLayout(state->device, state->pipelineLayout, NULL);
+
     vkDestroyRenderPass(state->device, state->renderPass, NULL);
 
     if(state->imageAvailableSemaphores != NULL){
