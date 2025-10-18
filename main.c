@@ -58,6 +58,8 @@ struct VkState{
     VkPhysicalDeviceProperties physicalDeviceProperties;
     VkPhysicalDeviceFeatures physicalDeviceFeatures;
     VkPhysicalDeviceMemoryProperties physicalMemoryProperties;
+    VkQueueFamilyProperties* queueFamilyProperties;
+    uint32_t queueFamilyCount;
     float queuePriority;
     struct QueueFamilyIndices{
         uint32_t graphicsFamily;
@@ -270,21 +272,20 @@ void pickPhysicalDevice(struct VkState* state){
 
 void setupQueues(struct VkState* state){
     printf("[+] Setting up Queues\n");
-    uint32_t queueFamilyCount = 0;
-    vkGetPhysicalDeviceQueueFamilyProperties(state->physicalDevice, &queueFamilyCount, NULL);
-    VkQueueFamilyProperties queueFamilyProperties[queueFamilyCount];
-    vkGetPhysicalDeviceQueueFamilyProperties(state->physicalDevice, &queueFamilyCount, queueFamilyProperties);
-    for(int i = 0; i < queueFamilyCount; i++){
-        if((queueFamilyProperties[i].queueFlags & VK_QUEUE_GRAPHICS_BIT)){
-            if(queueFamilyProperties[i].queueCount > state->queueCount.graphics){
+    vkGetPhysicalDeviceQueueFamilyProperties(state->physicalDevice, &state->queueFamilyCount, NULL);
+    state->queueFamilyProperties = malloc(sizeof(VkQueueFamilyProperties) * state->queueFamilyCount);
+    vkGetPhysicalDeviceQueueFamilyProperties(state->physicalDevice, &state->queueFamilyCount, state->queueFamilyProperties);
+    for(int i = 0; i < state->queueFamilyCount; i++){
+        if((state->queueFamilyProperties[i].queueFlags & VK_QUEUE_GRAPHICS_BIT)){
+            if(state->queueFamilyProperties[i].queueCount > state->queueCount.graphics){
                 state->queueFamilyIndices.graphicsFamily = i;
-                state->queueCount.graphics = queueFamilyProperties[i].queueCount;
+                state->queueCount.graphics = state->queueFamilyProperties[i].queueCount;
             }
         }
-        if((queueFamilyProperties[i].queueFlags & VK_QUEUE_COMPUTE_BIT)){
-            if(queueFamilyProperties[i].queueCount > state->queueCount.compute){
+        if((state->queueFamilyProperties[i].queueFlags & VK_QUEUE_COMPUTE_BIT)){
+            if(state->queueFamilyProperties[i].queueCount > state->queueCount.compute){
                 state->queueFamilyIndices.computeFamily = i;
-                state->queueCount.compute = queueFamilyProperties[i].queueCount;
+                state->queueCount.compute = state->queueFamilyProperties[i].queueCount;
             }
         }
     }
