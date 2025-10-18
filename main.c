@@ -1,3 +1,4 @@
+// main.c
 #include <stdlib.h>
 #include <vulkan/vulkan_core.h>
 #define GLFW_INCLUDE_VULKAN
@@ -8,6 +9,7 @@
 #include <stdio.h>
 #include <stdbool.h>
 #include <stdlib.h>
+#include <time.h>
 #include <unistd.h>
 
 struct Vertex {
@@ -15,7 +17,13 @@ struct Vertex {
     vec3 color;
 };
 
-struct VertexState {
+struct UniformBufferObject{
+    mat4 model;
+    mat4 view;
+    mat4 proj;
+};
+
+struct ObjectState {
     struct Vertex* vertices;
     uint32_t vertexCount;
     uint16_t* indices;
@@ -26,6 +34,11 @@ struct VertexState {
     VkDeviceMemory vertexBufferMemory;
     VkBuffer indexBuffer;
     VkDeviceMemory indexBufferMemory;
+    VkBuffer* uniformBuffers;
+    VkDeviceMemory* uniformBuffersMemory;
+    void** uniformBuffersMapped;
+    VkDescriptorPool descriptorPool;
+    VkDescriptorSet* descriptorSets;
 };
 
 struct VkState{
@@ -65,6 +78,7 @@ struct VkState{
     VkShaderModule vertexShader;
     VkShaderModule fragmentShader;
     VkRenderPass renderPass;
+    VkDescriptorSetLayout descriptorSetLayout;
     VkPipelineLayout pipelineLayout;
     VkPipeline graphicsPipeline;
     VkFramebuffer* swapchainFramebuffers;
@@ -78,7 +92,8 @@ struct VkState{
     uint32_t currentFrame;
     bool framebufferResized;
 
-    struct VertexState vertexState;
+    struct ObjectState objectState;
+
     VkDebugUtilsMessengerEXT debugMessenger;
 };
 
@@ -312,8 +327,6 @@ void createLogicalDevice(struct VkState* state){
         .ppEnabledExtensionNames = enabledExtensions,
         .enabledExtensionCount = enabledExtensionCount,
         .pEnabledFeatures = &enabledFeatures,
-//        .ppEnabledLayerNames = &validationLayer,
-//        .enabledLayerCount = enabledLayerCount,
         .ppEnabledLayerNames = NULL,
         .enabledLayerCount = 0
     };
@@ -515,9 +528,9 @@ void createRenderPass(struct VkState* state){
     assert(vkCreateRenderPass(state->device, &renderPassInfo, NULL, &state->renderPass) == VK_SUCCESS);
 }
 
-void initVertexState(struct VkState* state){
-    state->vertexState.vertexCount = 4;
-    state->vertexState.vertices = malloc(sizeof(struct Vertex) * state->vertexState.vertexCount);
+void initObjectState(struct VkState* state){
+    state->objectState.vertexCount = 4;
+    state->objectState.vertices = malloc(sizeof(struct Vertex) * state->objectState.vertexCount);
 
     struct Vertex vertTemp[] = {
         {{-0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}},
@@ -525,30 +538,30 @@ void initVertexState(struct VkState* state){
         {{ 0.5f,  0.5f}, {0.0f, 0.0f, 1.0f}},
         {{-0.5f,  0.5f}, {1.0f, 1.0f, 1.0f}},
     };
-    memcpy(state->vertexState.vertices, vertTemp, sizeof(vertTemp));
+    memcpy(state->objectState.vertices, vertTemp, sizeof(vertTemp));
 
-    state->vertexState.indexCount = 6;
-    state->vertexState.indices = malloc(sizeof(state->vertexState.indices) * state->vertexState.indexCount);
+    state->objectState.indexCount = 6;
+    state->objectState.indices = malloc(sizeof(state->objectState.indices) * state->objectState.indexCount);
 
     uint16_t indices[] = {
         0, 1, 2, 2, 3, 0
     };
-    memcpy(state->vertexState.indices, indices, sizeof(indices));
+    memcpy(state->objectState.indices, indices, sizeof(indices));
 
-    state->vertexState.bindingDescription.binding = 0;
-    state->vertexState.bindingDescription.stride = sizeof(struct Vertex);
-    state->vertexState.bindingDescription.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
+    state->objectState.bindingDescription.binding = 0;
+    state->objectState.bindingDescription.stride = sizeof(struct Vertex);
+    state->objectState.bindingDescription.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
 
-    state->vertexState.attributeDescriptions = malloc(2*sizeof(VkVertexInputAttributeDescription));
-    state->vertexState.attributeDescriptions[0].binding = 0;
-    state->vertexState.attributeDescriptions[0].location = 0;
-    state->vertexState.attributeDescriptions[0].format = VK_FORMAT_R32G32_SFLOAT;
-    state->vertexState.attributeDescriptions[0].offset = offsetof(struct Vertex, pos);
+    state->objectState.attributeDescriptions = malloc(2*sizeof(VkVertexInputAttributeDescription));
+    state->objectState.attributeDescriptions[0].binding = 0;
+    state->objectState.attributeDescriptions[0].location = 0;
+    state->objectState.attributeDescriptions[0].format = VK_FORMAT_R32G32_SFLOAT;
+    state->objectState.attributeDescriptions[0].offset = offsetof(struct Vertex, pos);
 
-    state->vertexState.attributeDescriptions[1].binding = 0;
-    state->vertexState.attributeDescriptions[1].location = 1;
-    state->vertexState.attributeDescriptions[1].format = VK_FORMAT_R32G32B32_SFLOAT;
-    state->vertexState.attributeDescriptions[1].offset = offsetof(struct Vertex, color);
+    state->objectState.attributeDescriptions[1].binding = 0;
+    state->objectState.attributeDescriptions[1].location = 1;
+    state->objectState.attributeDescriptions[1].format = VK_FORMAT_R32G32B32_SFLOAT;
+    state->objectState.attributeDescriptions[1].offset = offsetof(struct Vertex, color);
 
 }
 
@@ -599,6 +612,25 @@ void createShaders(struct VkState* state){
     free(fragmentShaderSPV);
 }
 
+void createDescriptorSetLayout(struct VkState* state){
+    VkDescriptorSetLayoutBinding uboLayoutBinding = {
+        .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+        .descriptorCount = 1,
+        .binding = 0,
+        .stageFlags = VK_SHADER_STAGE_VERTEX_BIT,
+        .pImmutableSamplers = NULL,
+    };
+
+    VkDescriptorSetLayoutCreateInfo layoutInfo = {
+        .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
+        .bindingCount = 1,
+        .pBindings = &uboLayoutBinding,
+    };
+
+    assert(vkCreateDescriptorSetLayout(state->device, &layoutInfo, NULL, &state->descriptorSetLayout) == VK_SUCCESS);
+
+}
+
 void createGraphicsPipeline(struct VkState* state){
     printf("[+] Creating Graphics pipeline\n");
     VkPipelineShaderStageCreateInfo vertShaderStageInfo = {
@@ -629,10 +661,10 @@ void createGraphicsPipeline(struct VkState* state){
     VkPipelineVertexInputStateCreateInfo vertexInputInfo = {
         .sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
         .vertexBindingDescriptionCount = 1,
-        .pVertexBindingDescriptions = &state->vertexState.bindingDescription,
+        .pVertexBindingDescriptions = &state->objectState.bindingDescription,
 
         .vertexAttributeDescriptionCount = 2,
-        .pVertexAttributeDescriptions = state->vertexState.attributeDescriptions 
+        .pVertexAttributeDescriptions = state->objectState.attributeDescriptions 
     };
 
     VkPipelineInputAssemblyStateCreateInfo inputAssembly = {
@@ -653,7 +685,7 @@ void createGraphicsPipeline(struct VkState* state){
         .polygonMode = VK_POLYGON_MODE_FILL,
         .lineWidth = 1.0f,
         .cullMode = VK_CULL_MODE_BACK_BIT,
-        .frontFace = VK_FRONT_FACE_CLOCKWISE,
+        .frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE,
         .depthBiasEnable = VK_FALSE,
         .depthBiasConstantFactor = 0.0f,
         .depthBiasClamp = 0.0f,
@@ -698,10 +730,10 @@ void createGraphicsPipeline(struct VkState* state){
 
     VkPipelineLayoutCreateInfo pipelineLayoutCreateInfo = {
         .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
-        .setLayoutCount = 0,
-        .pSetLayouts = NULL,
+        .setLayoutCount = 1,
+        .pSetLayouts = &state->descriptorSetLayout,
         .pushConstantRangeCount = 0,
-        .pPushConstantRanges = NULL
+        .pPushConstantRanges = NULL,
     };
 
     assert(vkCreatePipelineLayout(state->device, &pipelineLayoutCreateInfo, NULL, &state->pipelineLayout) == VK_SUCCESS);
@@ -847,7 +879,7 @@ void copyBuffer(struct VkState* state, VkBuffer src, VkBuffer dst, VkDeviceSize 
 
 void createVertexBuffer(struct VkState* state){
     printf("[+] Creating Vertex Buffer\n");
-    VkDeviceSize bufferSize = sizeof(struct Vertex) * state->vertexState.vertexCount;
+    VkDeviceSize bufferSize = sizeof(struct Vertex) * state->objectState.vertexCount;
     VkBuffer stagingBuffer;
     VkDeviceMemory stagingBufferMemory;
     createBuffer(state, 
@@ -859,18 +891,18 @@ void createVertexBuffer(struct VkState* state){
 
     void* data;
     vkMapMemory(state->device, stagingBufferMemory, 0, bufferSize, 0, &data);
-    memcpy(data, state->vertexState.vertices, bufferSize);
+    memcpy(data, state->objectState.vertices, bufferSize);
     vkUnmapMemory(state->device, stagingBufferMemory);
 
     createBuffer(state, 
         bufferSize,
         VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
         VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-        &state->vertexState.vertexBuffer,
-        &state->vertexState.vertexBufferMemory
+        &state->objectState.vertexBuffer,
+        &state->objectState.vertexBufferMemory
         );
 
-    copyBuffer(state, stagingBuffer, state->vertexState.vertexBuffer, bufferSize);
+    copyBuffer(state, stagingBuffer, state->objectState.vertexBuffer, bufferSize);
 
     vkDestroyBuffer(state->device, stagingBuffer, NULL);
     vkFreeMemory(state->device, stagingBufferMemory, NULL);
@@ -878,7 +910,7 @@ void createVertexBuffer(struct VkState* state){
 
 void createIndexBuffer(struct VkState* state){
     printf("[+] Creating Index Buffer\n");
-    VkDeviceSize bufferSize = sizeof(state->vertexState.indices) * state->vertexState.indexCount;
+    VkDeviceSize bufferSize = sizeof(state->objectState.indices) * state->objectState.indexCount;
     VkBuffer stagingBuffer;
     VkDeviceMemory stagingBufferMemory;
     createBuffer(state, 
@@ -890,20 +922,85 @@ void createIndexBuffer(struct VkState* state){
 
     void* data;
     vkMapMemory(state->device, stagingBufferMemory, 0, bufferSize, 0, &data);
-    memcpy(data, state->vertexState.indices, bufferSize);
+    memcpy(data, state->objectState.indices, bufferSize);
     vkUnmapMemory(state->device, stagingBufferMemory);
 
     createBuffer(state, 
             bufferSize, 
             VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT, 
             VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, 
-            &state->vertexState.indexBuffer, 
-            &state->vertexState.indexBufferMemory);
+            &state->objectState.indexBuffer, 
+            &state->objectState.indexBufferMemory);
 
-    copyBuffer(state, stagingBuffer, state->vertexState.indexBuffer, bufferSize);
+    copyBuffer(state, stagingBuffer, state->objectState.indexBuffer, bufferSize);
 
     vkDestroyBuffer(state->device, stagingBuffer, NULL);
     vkFreeMemory(state->device, stagingBufferMemory, NULL);
+}
+
+void createUniformBuffers(struct VkState* state){
+    VkDeviceSize bufferSize = sizeof(struct UniformBufferObject);
+    state->objectState.uniformBuffers = malloc(sizeof(VkBuffer) * state->MAX_FRAMES_IN_FLIGHT);
+    state->objectState.uniformBuffersMemory = malloc(sizeof(VkDeviceMemory) * state->MAX_FRAMES_IN_FLIGHT);
+    state->objectState.uniformBuffersMapped = malloc(sizeof(void*) * state->MAX_FRAMES_IN_FLIGHT);
+
+    for(size_t i = 0; i < state->MAX_FRAMES_IN_FLIGHT; i++){
+        createBuffer(state, bufferSize, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, 
+                VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, 
+                &state->objectState.uniformBuffers[i], &state->objectState.uniformBuffersMemory[i]);
+        vkMapMemory(state->device, state->objectState.uniformBuffersMemory[i], 
+                0, bufferSize, 0, &state->objectState.uniformBuffersMapped[i]);
+    }
+}
+
+void createDescriptorPool(struct VkState* state){
+    VkDescriptorPoolSize descriptorPoolSize = {
+        .type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+        .descriptorCount = state->MAX_FRAMES_IN_FLIGHT
+    };
+    VkDescriptorPoolCreateInfo descriptorPoolCreateInfo = {
+        .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
+        .poolSizeCount = 1,
+        .pPoolSizes = &descriptorPoolSize,
+        .maxSets = state->MAX_FRAMES_IN_FLIGHT,
+        .flags = 0,
+    };
+
+    assert(vkCreateDescriptorPool(state->device, &descriptorPoolCreateInfo, NULL, &state->objectState.descriptorPool) == VK_SUCCESS);
+}
+
+void createDescriptorSets(struct VkState* state){
+    VkDescriptorSetLayout* layouts = malloc(sizeof(VkDescriptorSetLayout)*state->MAX_FRAMES_IN_FLIGHT);
+    for(int i = 0; i < state->MAX_FRAMES_IN_FLIGHT; i++) layouts[i] = state->descriptorSetLayout;
+    VkDescriptorSetAllocateInfo allocInfo ={
+        .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
+        .descriptorPool = state->objectState.descriptorPool,
+        .descriptorSetCount = state->MAX_FRAMES_IN_FLIGHT,
+        .pSetLayouts = layouts,
+    };
+
+    state->objectState.descriptorSets = malloc(sizeof(VkDescriptorSet)*state->MAX_FRAMES_IN_FLIGHT);
+    assert(vkAllocateDescriptorSets(state->device, &allocInfo, state->objectState.descriptorSets) == VK_SUCCESS);
+
+    for(int i = 0; i < state->MAX_FRAMES_IN_FLIGHT; i++){
+        VkDescriptorBufferInfo bufferInfo = {
+            .buffer = state->objectState.uniformBuffers[i],
+            .offset = 0,
+            .range = sizeof(struct UniformBufferObject),
+        };
+        VkWriteDescriptorSet descriptorWrite = {
+            .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+            .dstSet = state->objectState.descriptorSets[i],
+            .dstBinding = 0,
+            .dstArrayElement = 0,
+            .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+            .descriptorCount = 1,
+            .pBufferInfo = &bufferInfo,
+            .pImageInfo = NULL,
+            .pTexelBufferView = NULL,
+        };
+        vkUpdateDescriptorSets(state->device, 1, &descriptorWrite, 0, NULL);
+    }
 }
 
 void createCommandBuffers(struct VkState* state){
@@ -955,13 +1052,14 @@ void recordCommandBuffer(struct VkState* state, VkCommandBuffer commandBuffer, u
     };
     vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
 
-    VkBuffer vertexBuffers[] = {state->vertexState.vertexBuffer};
+    VkBuffer vertexBuffers[] = {state->objectState.vertexBuffer};
     VkDeviceSize offsets[] = {0};
-    vkCmdBindVertexBuffers(commandBuffer, 0, 1, &state->vertexState.vertexBuffer, offsets);
-    vkCmdBindIndexBuffer(commandBuffer, state->vertexState.indexBuffer, 0, VK_INDEX_TYPE_UINT16);
+    vkCmdBindVertexBuffers(commandBuffer, 0, 1, &state->objectState.vertexBuffer, offsets);
+    vkCmdBindIndexBuffer(commandBuffer, state->objectState.indexBuffer, 0, VK_INDEX_TYPE_UINT16);
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, state->pipelineLayout, 
+            0, 1, &state->objectState.descriptorSets[state->currentFrame], 0, NULL);
 
-    //vkCmdDraw(commandBuffer, state->vertexState.vertexCount, 1, 0, 0);
-    vkCmdDrawIndexed(commandBuffer, state->vertexState.indexCount, 1, 0, 0, 0);
+    vkCmdDrawIndexed(commandBuffer, state->objectState.indexCount, 1, 0, 0, 0);
     vkCmdEndRenderPass(commandBuffer);
     assert(vkEndCommandBuffer(commandBuffer) == VK_SUCCESS);
 }
@@ -1010,6 +1108,49 @@ void recreateSwapChain(struct VkState* state){
     createFrameBuffers(state);
 }
 
+void updateUniformBuffer(struct VkState* state, uint32_t currentImage){
+    static struct timespec start = {0};
+    struct timespec current;
+
+    if (start.tv_sec == 0 && start.tv_nsec == 0)
+        clock_gettime(CLOCK_MONOTONIC, &start);
+
+    clock_gettime(CLOCK_MONOTONIC, &current);
+
+    double deltaTime =
+        (current.tv_sec - start.tv_sec) +
+        (current.tv_nsec - start.tv_nsec) / 1e9;
+
+    struct UniformBufferObject ubo = {
+        .model = {0},
+        .view = {0},
+        .proj = {0},
+    };
+
+    mat4 model; glm_mat4_identity(model);
+    float angle = glm_rad(90.0f) * deltaTime;
+    float* axis = (vec3){0.0f, 0.0f, 1.0f};
+    glm_rotate(model, angle, axis);
+    glm_mat4_copy(model, ubo.model);
+
+    mat4 view;
+    float* eye = (vec3){2.0f, 2.0f, 2.0f};
+    float* center = (vec3){0.0f, 0.0f, 0.0f};
+    float* up = (vec3){0.0f, 0.0f, 1.0f};
+    glm_lookat(eye, center, up, view);
+    glm_mat4_copy(view, ubo.view);
+
+    mat4 proj;
+    float fovy = glm_rad(45.0f);
+    float aspect = (float)state->surfaceInfo.capabilities.currentExtent.width / (float)state->surfaceInfo.capabilities.currentExtent.height;
+    float nearZ = 0.1f;
+    float farZ = 10.0f;
+    glm_perspective(fovy, aspect, nearZ, farZ, proj);
+    glm_mat4_copy(proj, ubo.proj);
+    ubo.proj[1][1] *= -1;
+    memcpy(state->objectState.uniformBuffersMapped[currentImage], &ubo, sizeof(ubo));
+}
+
 void drawFrame(struct VkState* state){
     vkWaitForFences(state->device, 1, &state->inFlightFences[state->currentFrame], VK_TRUE, UINT64_MAX);
 
@@ -1022,6 +1163,7 @@ void drawFrame(struct VkState* state){
 
     vkResetFences(state->device, 1, &state->inFlightFences[state->currentFrame]);
     vkResetCommandBuffer(state->commandBuffers[state->currentFrame], 0);
+    updateUniformBuffer(state, state->currentFrame);
     recordCommandBuffer(state, state->commandBuffers[state->currentFrame], imageIndex);
 
     VkPipelineStageFlags waitStages[] = {VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT};
@@ -1081,13 +1223,17 @@ int main(void){
     createSwapChain(&state);
     createImageViews(&state);
     createRenderPass(&state);
-    initVertexState(&state);
+    initObjectState(&state);
     createShaders(&state);
+    createDescriptorSetLayout(&state);
     createGraphicsPipeline(&state);
     createFrameBuffers(&state);
     createCommandPool(&state);
     createVertexBuffer(&state);
     createIndexBuffer(&state);
+    createUniformBuffers(&state);
+    createDescriptorPool(&state);
+    createDescriptorSets(&state);
     createCommandBuffers(&state);
     createSyncObjects(&state);
     renderLoop(&state);
@@ -1098,30 +1244,28 @@ void cleanup(struct VkState* state){
     printf("[!] Cleaning up Instance\n");
     cleanupSwapchain(state);
     
-    vkDestroyBuffer(state->device, state->vertexState.vertexBuffer, NULL);
-    vkFreeMemory(state->device, state->vertexState.vertexBufferMemory, NULL);
-    vkDestroyBuffer(state->device, state->vertexState.indexBuffer, NULL);
-    vkFreeMemory(state->device, state->vertexState.indexBufferMemory, NULL);
+    vkDestroyBuffer(state->device, state->objectState.vertexBuffer, NULL);
+    vkFreeMemory(state->device, state->objectState.vertexBufferMemory, NULL);
+    vkDestroyBuffer(state->device, state->objectState.indexBuffer, NULL);
+    vkFreeMemory(state->device, state->objectState.indexBufferMemory, NULL);
 
+    vkDestroyDescriptorPool(state->device, state->objectState.descriptorPool, NULL);
+
+    vkDestroyDescriptorSetLayout(state->device, state->descriptorSetLayout, NULL);
     vkDestroyPipeline(state->device, state->graphicsPipeline, NULL);
     vkDestroyPipelineLayout(state->device, state->pipelineLayout, NULL);
 
     vkDestroyRenderPass(state->device, state->renderPass, NULL);
 
-    if(state->imageAvailableSemaphores != NULL){
-        for(uint32_t i = 0; i < state->MAX_FRAMES_IN_FLIGHT; i++){
-            if(state->imageAvailableSemaphores[i] != VK_NULL_HANDLE){
-                vkDestroySemaphore(state->device, state->imageAvailableSemaphores[i], NULL);
-            }
-        }
-    }
-
-    if(state->inFlightFences != NULL){
-        for(uint32_t i = 0; i < state->MAX_FRAMES_IN_FLIGHT; i++){
-            if(state->inFlightFences[i] != VK_NULL_HANDLE){
-                vkDestroyFence(state->device, state->inFlightFences[i], NULL);
-            }
-        }
+    for(uint32_t i = 0; i < state->MAX_FRAMES_IN_FLIGHT; i++){
+        if(state->inFlightFences[i] != VK_NULL_HANDLE)
+            vkDestroyFence(state->device, state->inFlightFences[i], NULL);
+        if(state->imageAvailableSemaphores[i] != VK_NULL_HANDLE)
+            vkDestroySemaphore(state->device, state->imageAvailableSemaphores[i], NULL);
+        if(state->objectState.uniformBuffers[i] != VK_NULL_HANDLE)
+            vkDestroyBuffer(state->device, state->objectState.uniformBuffers[i], NULL);
+        if(state->objectState.uniformBuffersMemory[i] != VK_NULL_HANDLE)
+            vkFreeMemory(state->device, state->objectState.uniformBuffersMemory[i], NULL);
     }
 
     vkDestroyShaderModule(state->device, state->vertexShader, NULL);
@@ -1143,8 +1287,13 @@ void cleanup(struct VkState* state){
     free(state->commandBuffers); state->commandBuffers = NULL;
     free(state->imageAvailableSemaphores); state->imageAvailableSemaphores = NULL;
     free(state->inFlightFences); state->inFlightFences = NULL;
-    free(state->vertexState.vertices); state->vertexState.vertexBuffer = NULL;
-    free(state->vertexState.attributeDescriptions); state->vertexState.attributeDescriptions = NULL;
+    free(state->objectState.vertices); state->objectState.vertexBuffer = NULL;
+    free(state->objectState.attributeDescriptions); state->objectState.attributeDescriptions = NULL;
+    free(state->objectState.uniformBuffers); state->objectState.uniformBuffers = NULL;
+    free(state->objectState.uniformBuffersMemory); state->objectState.uniformBuffersMemory = NULL;
+    free(state->objectState.uniformBuffersMapped); state->objectState.uniformBuffersMapped = NULL;
+    free(state->objectState.descriptorSets); state->objectState.descriptorSets = NULL;
+
 
     glfwTerminate();
 }
