@@ -43,8 +43,16 @@ struct ObjectState {
     VkBuffer* uniformBuffers;
     VkDeviceMemory* uniformBuffersMemory;
     void** uniformBuffersMapped;
+    VkDescriptorSetLayout descriptorSetLayout;
     VkDescriptorPool descriptorPool;
     VkDescriptorSet* descriptorSets;
+};
+
+struct ImguiState{
+    VkDescriptorPool descriptorPool;
+    VkCommandPool commandPool;
+    VkCommandBuffer commandBuffer;
+
 };
 
 struct VkState{
@@ -86,7 +94,6 @@ struct VkState{
     VkShaderModule vertexShader;
     VkShaderModule fragmentShader;
     VkRenderPass renderPass;
-    VkDescriptorSetLayout descriptorSetLayout;
     VkPipelineLayout pipelineLayout;
     VkPipeline graphicsPipeline;
     VkFramebuffer* swapchainFramebuffers;
@@ -101,6 +108,7 @@ struct VkState{
     bool framebufferResized;
 
     struct ObjectState objectState;
+    struct ImguiState imguiState;
 
     VkDebugUtilsMessengerEXT debugMessenger;
 };
@@ -324,9 +332,6 @@ void createLogicalDevice(struct VkState* state){
 
     VkPhysicalDeviceFeatures enabledFeatures = {};
 
-    const char* validationLayer = "VK_LAYER_KHRONOS_validation";
-    uint32_t enabledLayerCount = 1;
-
     VkDeviceCreateInfo createInfo = {
         .sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
         .pQueueCreateInfos = queueCreateInfos,
@@ -435,7 +440,6 @@ void createSwapChain(struct VkState* state){
         state->extent.height = clamp(state->extent.height, 
                 state->surfaceInfo.capabilities.minImageExtent.height, state->surfaceInfo.capabilities.maxImageExtent.height);
     }
-    state->imageCount = state->surfaceInfo.capabilities.minImageCount + 1;
 
     VkSwapchainCreateInfoKHR createInfo = {
         .sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR,
@@ -461,6 +465,7 @@ void createSwapChain(struct VkState* state){
     vkGetSwapchainImagesKHR(state->device, state->swapchain, &state->imageCount, NULL);
     state->swapchainImages = malloc(sizeof(VkImage) * state->imageCount);
     vkGetSwapchainImagesKHR(state->device, state->swapchain, &state->imageCount, state->swapchainImages);
+    printf("[+] Using %i swapchain images\n", state->imageCount);
 
     createRenderFinishedSemaphores(state);
 }
@@ -504,7 +509,7 @@ void createRenderPass(struct VkState* state){
 
     VkAttachmentReference colorAttachmentRef = {
         .attachment = 0,
-        .layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL
+        .layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
     };
 
     VkSubpassDependency dependency = {
@@ -634,12 +639,19 @@ void createDescriptorSetLayout(struct VkState* state){
         .pBindings = &uboLayoutBinding,
     };
 
-    assert(vkCreateDescriptorSetLayout(state->device, &layoutInfo, NULL, &state->descriptorSetLayout) == VK_SUCCESS);
-
+    assert(vkCreateDescriptorSetLayout(state->device, &layoutInfo, NULL, &state->objectState.descriptorSetLayout) == VK_SUCCESS);
 }
 
 void createGraphicsPipeline(struct VkState* state){
     printf("[+] Creating Graphics pipeline\n");
+
+    VkDynamicState dynamicStates[] = { VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR };
+    VkPipelineDynamicStateCreateInfo dynamicState = {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO,
+        .dynamicStateCount = 2,
+        .pDynamicStates = dynamicStates
+    };
+
     VkPipelineShaderStageCreateInfo vertShaderStageInfo = {
         .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
         .stage = VK_SHADER_STAGE_VERTEX_BIT,
@@ -657,13 +669,6 @@ void createGraphicsPipeline(struct VkState* state){
     };
 
     VkPipelineShaderStageCreateInfo shaderStages[] = {vertShaderStageInfo, fragShaderStageInfo};
-
-    VkDynamicState dynamicStates[] = { VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR };
-    VkPipelineDynamicStateCreateInfo dynamicState = {
-        .sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO,
-        .dynamicStateCount = 2,
-        .pDynamicStates = dynamicStates
-    };
 
     VkPipelineVertexInputStateCreateInfo vertexInputInfo = {
         .sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
@@ -738,7 +743,7 @@ void createGraphicsPipeline(struct VkState* state){
     VkPipelineLayoutCreateInfo pipelineLayoutCreateInfo = {
         .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
         .setLayoutCount = 1,
-        .pSetLayouts = &state->descriptorSetLayout,
+        .pSetLayouts = &state->objectState.descriptorSetLayout,
         .pushConstantRangeCount = 0,
         .pPushConstantRanges = NULL,
     };
@@ -747,6 +752,7 @@ void createGraphicsPipeline(struct VkState* state){
 
     VkGraphicsPipelineCreateInfo pipelineInfo = {
         .sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,
+        .pDynamicState = &dynamicState,
         .stageCount = 2,
         .pStages = shaderStages,
         .pVertexInputState = &vertexInputInfo,
@@ -756,7 +762,6 @@ void createGraphicsPipeline(struct VkState* state){
         .pMultisampleState = &multisampling,
         .pDepthStencilState = NULL,
         .pColorBlendState = &colorBlending,
-        .pDynamicState = &dynamicState,
         .layout = state->pipelineLayout,
         .renderPass = state->renderPass,
         .subpass = 0,
@@ -769,7 +774,9 @@ void createGraphicsPipeline(struct VkState* state){
 
 void createFrameBuffers(struct VkState* state){
     printf("[+] Creating Framebuffers\n");
-    state->MAX_FRAMES_IN_FLIGHT = 2;
+    // consider: https://erfan-ahmadi.github.io/blog/Nabla/fif for the future
+    state->MAX_FRAMES_IN_FLIGHT = (2 > state->imageCount ) ? 2 : state->imageCount;
+    printf("[+] Max Frames in Flight %i\n", state->imageCount);
     state->swapchainFramebuffers = malloc(state->imageCount * sizeof(VkFramebuffer));
     for(size_t i = 0; i < state->imageCount; i++){
         VkImageView attachments[] = {
@@ -804,7 +811,6 @@ void createCommandPool(struct VkState* state){
         .queueFamilyIndex = state->queueFamilyIndices.graphicsFamily
     };
     assert(vkCreateCommandPool(state->device, &transientInfo, NULL, &state->transientPool) == VK_SUCCESS);
-
 }
 
 void createBuffer(struct VkState* state, 
@@ -978,7 +984,7 @@ void createDescriptorPool(struct VkState* state){
 
 void createDescriptorSets(struct VkState* state){
     VkDescriptorSetLayout* layouts = malloc(sizeof(VkDescriptorSetLayout)*state->MAX_FRAMES_IN_FLIGHT);
-    for(int i = 0; i < state->MAX_FRAMES_IN_FLIGHT; i++) layouts[i] = state->descriptorSetLayout;
+    for(int i = 0; i < state->MAX_FRAMES_IN_FLIGHT; i++) layouts[i] = state->objectState.descriptorSetLayout;
     VkDescriptorSetAllocateInfo allocInfo ={
         .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
         .descriptorPool = state->objectState.descriptorPool,
@@ -1023,7 +1029,7 @@ void createCommandBuffers(struct VkState* state){
     assert(vkAllocateCommandBuffers(state->device, &allocInfo, state->commandBuffers) == VK_SUCCESS);
 }
 
-void recordCommandBuffer(struct VkState* state, VkCommandBuffer commandBuffer, uint32_t imageIndex){
+void recordCommandBuffer(struct VkState* state, VkCommandBuffer commandBuffer, uint32_t imageIndex, ImDrawData* texture){
     VkCommandBufferBeginInfo beginInfo = {
         .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
         .flags = 0,
@@ -1067,6 +1073,9 @@ void recordCommandBuffer(struct VkState* state, VkCommandBuffer commandBuffer, u
             0, 1, &state->objectState.descriptorSets[state->currentFrame], 0, NULL);
 
     vkCmdDrawIndexed(commandBuffer, state->objectState.indexCount, 1, 0, 0, 0);
+
+    ImGui_ImplVulkan_RenderDrawData(texture, commandBuffer, VK_NULL_HANDLE);
+
     vkCmdEndRenderPass(commandBuffer);
     assert(vkEndCommandBuffer(commandBuffer) == VK_SUCCESS);
 }
@@ -1111,6 +1120,7 @@ void recreateSwapChain(struct VkState* state){
     cleanupSwapchain(state);
 
     createSwapChain(state);
+    ImGui_ImplVulkan_SetMinImageCount(state->MAX_FRAMES_IN_FLIGHT);
     createImageViews(state);
     createFrameBuffers(state);
 }
@@ -1162,16 +1172,24 @@ void drawFrame(struct VkState* state){
     vkWaitForFences(state->device, 1, &state->inFlightFences[state->currentFrame], VK_TRUE, UINT64_MAX);
 
     uint32_t imageIndex;
+    bool yk = true;
     VkResult result = 
         vkAcquireNextImageKHR(state->device, state->swapchain, UINT64_MAX, state->imageAvailableSemaphores[state->currentFrame], VK_NULL_HANDLE, &imageIndex);
 
     if(result == VK_ERROR_OUT_OF_DATE_KHR){ recreateSwapChain(state); return;
     } else if ((result != VK_SUCCESS) && (result != VK_SUBOPTIMAL_KHR)){ assert(0); }
 
+    ImGui_ImplGlfw_NewFrame();
+    ImGui_ImplVulkan_NewFrame();
+    igNewFrame();
+    igShowDemoWindow(&yk);
+    igRender();
+    ImDrawData* drawData = igGetDrawData();
+
     vkResetFences(state->device, 1, &state->inFlightFences[state->currentFrame]);
     vkResetCommandBuffer(state->commandBuffers[state->currentFrame], 0);
     updateUniformBuffer(state, state->currentFrame);
-    recordCommandBuffer(state, state->commandBuffers[state->currentFrame], imageIndex);
+    recordCommandBuffer(state, state->commandBuffers[state->currentFrame], imageIndex, drawData);
 
     VkPipelineStageFlags waitStages[] = {VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT};
     VkSubmitInfo submitInfo = {
@@ -1213,21 +1231,82 @@ void renderLoop(struct VkState* state){
     vkDeviceWaitIdle(state->device);
 }
 
+void initImGuiDescriptorPool(struct VkState* state){
+    printf("[+] Creating ImGui Descriptor Pool\n");
+    VkDescriptorPoolSize uniformPS = {
+        .type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+        .descriptorCount = state->MAX_FRAMES_IN_FLIGHT,
+    };
+
+    VkDescriptorPoolSize imagePS = {
+        .type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+        .descriptorCount = state->MAX_FRAMES_IN_FLIGHT,
+    };
+
+    VkDescriptorPoolSize samplerPS = {
+        .type = VK_DESCRIPTOR_TYPE_SAMPLER,
+        .descriptorCount = state->MAX_FRAMES_IN_FLIGHT
+    };
+
+    VkDescriptorPoolSize pS[] = {uniformPS, imagePS, samplerPS};
+    VkDescriptorPoolCreateInfo descriptorPoolCreateInfo = {
+        .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
+        .poolSizeCount = sizeof(pS)/sizeof(VkDescriptorPoolSize),
+        .pPoolSizes = pS,
+        .maxSets = state->MAX_FRAMES_IN_FLIGHT,
+        .flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT,
+    };
+
+    assert(vkCreateDescriptorPool(state->device, &descriptorPoolCreateInfo, NULL, &state->imguiState.descriptorPool) == VK_SUCCESS);
+}
+
 void initGui(struct VkState* state){
+    initImGuiDescriptorPool(state);
     igCreateContext(NULL);
     ImGuiIO * io = igGetIO_Nil();
-    printf("%s\n", io->IniFilename);
     ImGui_ImplGlfw_InitForVulkan(state->window, true);
     ImGui_ImplVulkan_InitInfo initInfo = {
         .ApiVersion = VK_MAKE_VERSION(1, 0, 0),
         .Instance = state->instance,
         .PhysicalDevice = state->physicalDevice,
         .Device = state->device,
-        .Queue = state->graphicsQueue,
         .QueueFamily = state->queueFamilyIndices.graphicsFamily,
-        // etc ....
+        .Queue = state->graphicsQueue,
+        .DescriptorPool = state->imguiState.descriptorPool,
+        .ImageCount = state->imageCount,
+        .MinImageCount = state->MAX_FRAMES_IN_FLIGHT,
+        .MSAASamples = VK_SAMPLE_COUNT_1_BIT,
+        .RenderPass = state->renderPass,
+        .Subpass = 0,
     };
-    //ImGui_ImplVulkan_Init(&initInfo);
+    ImGui_ImplVulkan_Init(&initInfo);
+
+    VkCommandBufferBeginInfo cbbi = {
+        .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
+        .flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT
+    };
+
+    VkSubmitInfo si = {
+        .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
+        .commandBufferCount = 1,
+        .pCommandBuffers = &state->imguiState.commandBuffer
+    };
+
+    VkCommandBufferAllocateInfo allocInfo = {
+        .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
+        .commandPool = state->transientPool,
+        .level = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
+        .commandBufferCount = 1,
+    };
+
+    assert(vkAllocateCommandBuffers(state->device, &allocInfo, &state->imguiState.commandBuffer) == VK_SUCCESS);
+
+    vkBeginCommandBuffer(state->imguiState.commandBuffer, &cbbi);
+    ImGui_ImplVulkan_NewFrame();
+    vkEndCommandBuffer(state->imguiState.commandBuffer);
+    vkQueueSubmit(state->graphicsQueue, 1, &si, VK_NULL_HANDLE);
+    vkQueueWaitIdle(state->graphicsQueue);
+    vkFreeCommandBuffers(state->device, state->transientPool, 1, &state->imguiState.commandBuffer);
 }
 
 int main(void){
@@ -1268,15 +1347,20 @@ int main(void){
 void cleanup(struct VkState* state){
     printf("[!] Cleaning up Instance\n");
     cleanupSwapchain(state);
-    
+    glfwDestroyWindow(state->window);
+    ImGui_ImplVulkan_Shutdown();
+    ImGui_ImplGlfw_Shutdown();
+    igDestroyContext(NULL);
+
     vkDestroyBuffer(state->device, state->objectState.vertexBuffer, NULL);
     vkFreeMemory(state->device, state->objectState.vertexBufferMemory, NULL);
     vkDestroyBuffer(state->device, state->objectState.indexBuffer, NULL);
     vkFreeMemory(state->device, state->objectState.indexBufferMemory, NULL);
 
     vkDestroyDescriptorPool(state->device, state->objectState.descriptorPool, NULL);
+    vkDestroyDescriptorPool(state->device, state->imguiState.descriptorPool, NULL);
 
-    vkDestroyDescriptorSetLayout(state->device, state->descriptorSetLayout, NULL);
+    vkDestroyDescriptorSetLayout(state->device, state->objectState.descriptorSetLayout, NULL);
     vkDestroyPipeline(state->device, state->graphicsPipeline, NULL);
     vkDestroyPipelineLayout(state->device, state->pipelineLayout, NULL);
 
@@ -1298,6 +1382,7 @@ void cleanup(struct VkState* state){
 
     vkDestroyCommandPool(state->device, state->commandPool, NULL);
     vkDestroyCommandPool(state->device, state->transientPool, NULL);
+    vkDestroyCommandPool(state->device, state->imguiState.commandPool, NULL);
     vkDestroyDevice(state->device, NULL);
 
     DestroyDebugUtilsMessengerEXT(state->instance, state->debugMessenger, NULL);
@@ -1305,7 +1390,7 @@ void cleanup(struct VkState* state){
     vkDestroySurfaceKHR(state->instance, state->surface, NULL);
     vkDestroyInstance(state->instance, NULL);
 
-    glfwDestroyWindow(state->window);
+    free(state->queueFamilyProperties); state->queueFamilyProperties = NULL;
     free(state->swapchainImages); state->swapchainImages = NULL;
     free(state->swapchainImageViews); state->swapchainImageViews = NULL;
     free(state->swapchainFramebuffers); state->swapchainFramebuffers = NULL;
@@ -1318,7 +1403,6 @@ void cleanup(struct VkState* state){
     free(state->objectState.uniformBuffersMemory); state->objectState.uniformBuffersMemory = NULL;
     free(state->objectState.uniformBuffersMapped); state->objectState.uniformBuffersMapped = NULL;
     free(state->objectState.descriptorSets); state->objectState.descriptorSets = NULL;
-
 
     glfwTerminate();
 }
