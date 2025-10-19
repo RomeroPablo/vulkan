@@ -17,6 +17,7 @@
 #define CIMGUI_USE_GLFW
 #include "external/cimgui.h"
 #include "external/cimgui_impl.h"
+#include "external/style.h"
 
 struct Vertex {
     vec2 pos;
@@ -1259,11 +1260,11 @@ void initImGuiDescriptorPool(struct VkState* state){
 
     assert(vkCreateDescriptorPool(state->device, &descriptorPoolCreateInfo, NULL, &state->imguiState.descriptorPool) == VK_SUCCESS);
 }
-
 void initGui(struct VkState* state){
     initImGuiDescriptorPool(state);
     igCreateContext(NULL);
     ImGuiIO * io = igGetIO_Nil();
+    io->IniFilename = NULL;
     ImGui_ImplGlfw_InitForVulkan(state->window, true);
     ImGui_ImplVulkan_InitInfo initInfo = {
         .ApiVersion = VK_MAKE_VERSION(1, 0, 0),
@@ -1280,6 +1281,8 @@ void initGui(struct VkState* state){
         .Subpass = 0,
     };
     ImGui_ImplVulkan_Init(&initInfo);
+    ImGuiStyle* style = igGetStyle();
+    setEngineStyle(style);
 
     VkCommandBufferBeginInfo cbbi = {
         .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
