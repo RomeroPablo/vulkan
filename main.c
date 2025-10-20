@@ -1,4 +1,5 @@
 // main.c
+#include <cglm/vec3.h>
 #include <stdlib.h>
 #include <vulkan/vulkan_core.h>
 #define GLFW_INCLUDE_VULKAN
@@ -57,6 +58,21 @@ struct ImguiState{
 
 };
 
+struct Camera{
+    vec3 position;
+    vec3 front;
+    vec3 up;
+    vec3 right;
+    float yaw;
+    float pitch;
+    float moveSpeed;
+    float mouseSensitivity;
+    bool firstMouse;
+    double lastX;
+    double lastY;
+    bool mouseCaptured;
+};
+
 struct VkState{
     struct Resolution{
         uint32_t width;
@@ -108,7 +124,10 @@ struct VkState{
     uint32_t MAX_FRAMES_IN_FLIGHT;
     uint32_t currentFrame;
     bool framebufferResized;
+    double lastFrameTime;
+    float deltaTime;
 
+    struct Camera camera;
     struct ObjectState objectState;
     struct ImguiState imguiState;
 
@@ -208,6 +227,26 @@ void initWindow(struct VkState* state){
     glfwSetWindowUserPointer(state->window, state);
     glfwSetFramebufferSizeCallback(state->window, frameBufferResizeCallback);
     assert(state->window);
+}
+
+void initCamera(struct VkState* state){
+    glm_vec3_copy((vec3){0.0f, -3.0f, 1.5f}, state->camera.position);
+    state->camera.yaw = 90.0f;
+    state->camera.pitch = -15.0f;
+    state->camera.moveSpeed = 3.0f;
+    state->camera.mouseSensitivity = 0.1f;
+    state->camera.firstMouse = true;
+    state->camera.mouseCaptured = false;
+
+    vec3 front = {
+        cosf(glm_rad(state->camera.pitch)) * cosf(glm_rad(state->camera.yaw)),
+        cosf(glm_rad(state->camera.pitch)) * sinf(glm_rad(state->camera.yaw)),
+        sinf(glm_rad(state->camera.pitch)),
+    };
+    glm_vec3_normalize_to(front, state->camera.front);
+    vec3 worldUp = {0.0f, 0.0f, 1.0f};
+    glm_vec3_crossn(state->camera.front, worldUp, state->camera.right);
+    glm_vec3_crossn(state->camera.right, state->camera.front, state->camera.up);
 }
 
 void createInstance(struct VkState* state){
@@ -1182,6 +1221,7 @@ void uploadUIData(struct VkState* state){
     vkQueueWaitIdle(state->graphicsQueue);
     vkFreeCommandBuffers(state->device, state->transientPool, 1, &state->imguiState.commandBuffer);
 }
+
 void initGui(struct VkState* state){
     initImGuiDescriptorPool(state);
     igCreateContext(NULL);
@@ -1233,16 +1273,15 @@ void updateUniformBuffer(struct VkState* state, uint32_t currentImage){
     };
 
     mat4 model; glm_mat4_identity(model);
-    float angle = glm_rad(90.0f) * deltaTime;
+    float angle = glm_rad(90.0f) * 1.0;//deltaTime;
     float* axis = (vec3){0.0f, 0.0f, 1.0f};
     glm_rotate(model, angle, axis);
     glm_mat4_copy(model, ubo.model);
 
     mat4 view;
-    float* eye = (vec3){2.0f, 2.0f, 2.0f};
-    float* center = (vec3){0.0f, 0.0f, 0.0f};
-    float* up = (vec3){0.0f, 0.0f, 1.0f};
-    glm_lookat(eye, center, up, view);
+    vec3 center;
+    glm_vec3_add(state->camera.position, state->camera.front, center);
+    glm_lookat(state->camera.position, center, state->camera.up, view);
     glm_mat4_copy(view, ubo.view);
 
     mat4 proj;
@@ -1256,19 +1295,136 @@ void updateUniformBuffer(struct VkState* state, uint32_t currentImage){
     memcpy(state->objectState.uniformBuffersMapped[currentImage], &ubo, sizeof(ubo));
 }
 
+void processMouseInput(struct VkState* state){
+    ImGuiIO* io = igGetIO_Nil();
+    if (io->WantCaptureMouse){
+        if (state->camera.mouseCaptured){
+            glfwSetInputMode(state->window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
+            state->camera.mouseCaptured = false;
+        }
+        state->camera.firstMouse = true;
+        return;
+    }
+
+    if (glfwGetMouseButton(state->window, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS){
+        if (!state->camera.mouseCaptured){
+            state->camera.mouseCaptured = true;
+            glfwSetInputMode(state->window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+            state->camera.firstMouse = true;
+        }
+    } else if (state->camera.mouseCaptured){
+        glfwSetInputMode(state->window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
+        state->camera.mouseCaptured = false;
+        state->camera.firstMouse = true;
+    }
+
+    if (!state->camera.mouseCaptured)
+        return;
+
+    double xpos, ypos;
+    glfwGetCursorPos(state->window, &xpos, &ypos);
+    if (state->camera.firstMouse){
+        state->camera.lastX = xpos;
+        state->camera.lastY = ypos;
+        state->camera.firstMouse = false;
+    }
+
+    float xoffset = (float)(state->camera.lastX - xpos) * state->camera.mouseSensitivity;
+    float yoffset = (float)(state->camera.lastY - ypos) * state->camera.mouseSensitivity;
+    state->camera.lastX = xpos;
+    state->camera.lastY = ypos;
+
+    state->camera.yaw += xoffset;
+    state->camera.pitch += yoffset;
+    if (state->camera.pitch > 89.0f) state->camera.pitch = 89.0f;
+    if (state->camera.pitch < -89.0f) state->camera.pitch = -89.0f;
+}
+
+void updateCamera(struct VkState* state){
+    vec3 front = {
+        cosf(glm_rad(state->camera.pitch)) * cosf(glm_rad(state->camera.yaw)),
+        cosf(glm_rad(state->camera.pitch)) * sinf(glm_rad(state->camera.yaw)),
+        sinf(glm_rad(state->camera.pitch)),
+    };
+    glm_vec3_normalize_to(front, state->camera.front);
+
+    vec3 worldUp = {0.0f, 0.0f, 1.0f};
+    glm_vec3_crossn(state->camera.front, worldUp, state->camera.right);
+    glm_vec3_crossn(state->camera.right, state->camera.front, state->camera.up);
+
+    ImGuiIO* io = igGetIO_Nil();
+    if (io->WantCaptureKeyboard)
+        return;
+
+    float velocity = state->camera.moveSpeed * state->deltaTime;
+    vec3 planarFront;
+    glm_vec3_scale(worldUp, glm_vec3_dot(state->camera.front, worldUp), planarFront);
+    glm_vec3_sub(state->camera.front, planarFront, planarFront);
+    if (glm_vec3_norm(planarFront) > 0.0f)
+        glm_vec3_normalize(planarFront);
+    else
+        glm_vec3_copy(state->camera.front, planarFront);
+
+    if (glfwGetKey(state->window, GLFW_KEY_W) == GLFW_PRESS)
+        glm_vec3_muladds(planarFront, velocity, state->camera.position);
+    if (glfwGetKey(state->window, GLFW_KEY_S) == GLFW_PRESS)
+        glm_vec3_muladds(planarFront, -velocity, state->camera.position);
+
+    if (glfwGetKey(state->window, GLFW_KEY_A) == GLFW_PRESS)
+        glm_vec3_muladds(state->camera.right, -velocity, state->camera.position);
+    if (glfwGetKey(state->window, GLFW_KEY_D) == GLFW_PRESS)
+        glm_vec3_muladds(state->camera.right, velocity, state->camera.position);
+
+    if (glfwGetKey(state->window, GLFW_KEY_SPACE) == GLFW_PRESS)
+        state->camera.position[2] += velocity;
+    if (glfwGetKey(state->window, GLFW_KEY_LEFT_CONTROL) == GLFW_PRESS)
+        state->camera.position[2] -= velocity;
+}
+
+void constructUI(struct VkState* state){
+    static bool open = true;
+    ImGuiIO* io = igGetIO_Nil();
+    //igShowDemoWindow(&open);
+
+    igSetNextWindowPos((ImVec2){10.0f, 10.0f}, ImGuiCond_Always, (ImVec2){0.0f, 0.0f});
+    igSetNextWindowBgAlpha(0.35f);
+    ImGuiWindowFlags flags = 
+        ImGuiWindowFlags_NoBackground | 
+        ImGuiWindowFlags_NoDecoration |
+        ImGuiWindowFlags_AlwaysAutoResize |
+        ImGuiWindowFlags_NoSavedSettings |
+        ImGuiWindowFlags_NoFocusOnAppearing |
+        ImGuiWindowFlags_NoNav |
+        ImGuiWindowFlags_NoMove;
+
+    if (igBegin("MetricsOverlay", NULL, flags)) {
+        float fps  = io->Framerate;
+        float ms   = 1000.0f / (fps > 0.0f ? fps : 1.0f);
+        igText("Frame: %.1f ms (%.1f FPS)", ms, fps);
+    }
+    igEnd();
+}
+
 void drawFrame(struct VkState* state){
     vkWaitForFences(state->device, 1, &state->inFlightFences[state->currentFrame], VK_TRUE, UINT64_MAX);
     uint32_t imageIndex;
     VkResult result = 
         vkAcquireNextImageKHR(state->device, state->swapchain, UINT64_MAX, state->imageAvailableSemaphores[state->currentFrame], VK_NULL_HANDLE, &imageIndex);
-
     if(result == VK_ERROR_OUT_OF_DATE_KHR){ recreateSwapChain(state); return;
     } else if ((result != VK_SUCCESS) && (result != VK_SUBOPTIMAL_KHR)){ assert(0); }
+
+    double now = glfwGetTime();
+    state->deltaTime = (float)(now - state->lastFrameTime);
+    state->lastFrameTime = now;
+    if (state->deltaTime > 0.1f) state->deltaTime = 0.1f; // clamp after long pauses
+
+    processMouseInput(state);
+    updateCamera(state);
 
     ImGui_ImplGlfw_NewFrame();
     ImGui_ImplVulkan_NewFrame();
     igNewFrame();
-    constructUI();
+    constructUI(state);
     igRender();
     ImDrawData* drawData = igGetDrawData();
 
@@ -1310,6 +1466,7 @@ void drawFrame(struct VkState* state){
 
 void renderLoop(struct VkState* state){
     printf("[+] Entering Render Loop\n");
+    state->lastFrameTime = glfwGetTime();
     while(!glfwWindowShouldClose(state->window)){
         glfwPollEvents();
         drawFrame(state);
@@ -1323,6 +1480,7 @@ int main(void){
     memset(&state, 0, sizeof(state));
 
     initWindow(&state);
+    initCamera(&state);
     createInstance(&state);
     if(checkValidationLayerSupport())
         setupDebugMessenger(&state);

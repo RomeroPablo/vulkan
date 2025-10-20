@@ -44,25 +44,3 @@ static inline void setEngineStyle(ImGuiStyle* style){
     style->Colors[ImGuiCol_ModalWindowDimBg]  		= (ImVec4){0.0f, 0.0f, 0.0f, 0.8f};
     style->Colors[ImGuiCol_DockingEmptyBg]    		= (ImVec4){0.0f, 0.0f, 0.0f, 0.0f};
 }
-
-static inline void constructUI(){
-    static bool show = false;
-    //igShowDemoWindow(&show);
-
-    igSetNextWindowPos((ImVec2){0.0f, 0.0f}, ImGuiCond_Always, (ImVec2){0.0f, 0.0f});
-    igSetNextWindowSize((ImVec2){200.0f, 100.0f}, ImGuiCond_Always);
-
-    ImGuiWindowFlags flags = 
-        ImGuiWindowFlags_NoDecoration | 
-        //ImGuiWindowFlags_NoSavedSettings | 
-        ImGuiWindowFlags_NoBackground |
-        ImGuiWindowFlags_NoMove;
-
-    if (igBegin("TopLeftSliders", NULL, flags)) {
-        static float x = 0.0f, y = 0.0f, z = 0.0f;
-        igSliderFloat("X", &x, 0.0f, 1.0f, "%.3f", 0);
-        igSliderFloat("Y", &y, 0.0f, 1.0f, "%.3f", 0);
-        igSliderFloat("Z", &z, 0.0f, 1.0f, "%.3f", 0);
-    }
-    igEnd();
-}
