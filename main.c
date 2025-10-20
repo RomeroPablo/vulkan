@@ -408,8 +408,10 @@ void createSwapChain(struct VkState* state){
     vkGetPhysicalDeviceSurfaceFormatsKHR(state->physicalDevice, state->surface, &formatCount, NULL);
     VkSurfaceFormatKHR formats[formatCount];
     vkGetPhysicalDeviceSurfaceFormatsKHR(state->physicalDevice, state->surface, &formatCount, formats);
+    printf("[!] Total Formats : %i \n", formatCount);
     for(int i = 0; i < formatCount; i++){
-        if((formats[i].format == VK_FORMAT_B8G8R8A8_SRGB) && (formats[i].colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR)){
+        printf("[!] Found Format %i With Color Space %i \n", formats[i].format, formats[i].colorSpace);
+        if((formats[i].format == VK_FORMAT_B8G8R8A8_UNORM) && (formats[i].colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR)){
             printf("[!] Found desired format!\n");
             state->surfaceInfo.surfaceFormat = formats[i];
             break;
@@ -1126,6 +1128,85 @@ void recreateSwapChain(struct VkState* state){
     createFrameBuffers(state);
 }
 
+void initImGuiDescriptorPool(struct VkState* state){
+    printf("[+] Creating ImGui Descriptor Pool\n");
+    VkDescriptorPoolSize uniformPS = {
+        .type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+        .descriptorCount = state->MAX_FRAMES_IN_FLIGHT,
+    };
+
+    VkDescriptorPoolSize imagePS = {
+        .type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+        .descriptorCount = state->MAX_FRAMES_IN_FLIGHT,
+    };
+
+    VkDescriptorPoolSize samplerPS = {
+        .type = VK_DESCRIPTOR_TYPE_SAMPLER,
+        .descriptorCount = state->MAX_FRAMES_IN_FLIGHT
+    };
+
+    VkDescriptorPoolSize pS[] = {uniformPS, imagePS, samplerPS};
+    VkDescriptorPoolCreateInfo descriptorPoolCreateInfo = {
+        .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
+        .poolSizeCount = sizeof(pS)/sizeof(VkDescriptorPoolSize),
+        .pPoolSizes = pS,
+        .maxSets = state->MAX_FRAMES_IN_FLIGHT,
+        .flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT,
+    };
+
+    assert(vkCreateDescriptorPool(state->device, &descriptorPoolCreateInfo, NULL, &state->imguiState.descriptorPool) == VK_SUCCESS);
+}
+
+void uploadUIData(struct VkState* state){
+    VkCommandBufferBeginInfo cbbi = {
+        .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
+        .flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT
+    };
+    VkSubmitInfo si = {
+        .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
+        .commandBufferCount = 1,
+        .pCommandBuffers = &state->imguiState.commandBuffer
+    };
+    VkCommandBufferAllocateInfo allocInfo = {
+        .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
+        .commandPool = state->transientPool,
+        .level = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
+        .commandBufferCount = 1,
+    };
+    assert(vkAllocateCommandBuffers(state->device, &allocInfo, &state->imguiState.commandBuffer) == VK_SUCCESS);
+    vkBeginCommandBuffer(state->imguiState.commandBuffer, &cbbi);
+    ImGui_ImplVulkan_NewFrame(); // intial upload for e.g. font data ...
+    vkEndCommandBuffer(state->imguiState.commandBuffer);
+    vkQueueSubmit(state->graphicsQueue, 1, &si, VK_NULL_HANDLE);
+    vkQueueWaitIdle(state->graphicsQueue);
+    vkFreeCommandBuffers(state->device, state->transientPool, 1, &state->imguiState.commandBuffer);
+}
+void initGui(struct VkState* state){
+    initImGuiDescriptorPool(state);
+    igCreateContext(NULL);
+    ImGuiIO * io = igGetIO_Nil();
+    io->IniFilename = NULL;
+    ImGui_ImplGlfw_InitForVulkan(state->window, true);
+    ImGui_ImplVulkan_InitInfo initInfo = {
+        .ApiVersion = VK_MAKE_VERSION(1, 0, 0),
+        .Instance = state->instance,
+        .PhysicalDevice = state->physicalDevice,
+        .Device = state->device,
+        .QueueFamily = state->queueFamilyIndices.graphicsFamily,
+        .Queue = state->graphicsQueue,
+        .DescriptorPool = state->imguiState.descriptorPool,
+        .ImageCount = state->imageCount,
+        .MinImageCount = state->MAX_FRAMES_IN_FLIGHT,
+        .MSAASamples = VK_SAMPLE_COUNT_1_BIT,
+        .RenderPass = state->renderPass,
+        .Subpass = 0,
+    };
+    ImGui_ImplVulkan_Init(&initInfo);
+    ImGuiStyle* style = igGetStyle();
+    setEngineStyle(style);
+    uploadUIData(state);
+}
+
 void updateUniformBuffer(struct VkState* state, uint32_t currentImage){
     static struct timespec start = {0};
     struct timespec current;
@@ -1169,11 +1250,14 @@ void updateUniformBuffer(struct VkState* state, uint32_t currentImage){
     memcpy(state->objectState.uniformBuffersMapped[currentImage], &ubo, sizeof(ubo));
 }
 
+void constructUI(){
+    bool show = true;
+    igShowDemoWindow(&show);
+}
+
 void drawFrame(struct VkState* state){
     vkWaitForFences(state->device, 1, &state->inFlightFences[state->currentFrame], VK_TRUE, UINT64_MAX);
-
     uint32_t imageIndex;
-    bool yk = true;
     VkResult result = 
         vkAcquireNextImageKHR(state->device, state->swapchain, UINT64_MAX, state->imageAvailableSemaphores[state->currentFrame], VK_NULL_HANDLE, &imageIndex);
 
@@ -1183,7 +1267,7 @@ void drawFrame(struct VkState* state){
     ImGui_ImplGlfw_NewFrame();
     ImGui_ImplVulkan_NewFrame();
     igNewFrame();
-    igShowDemoWindow(&yk);
+    constructUI();
     igRender();
     ImDrawData* drawData = igGetDrawData();
 
@@ -1230,86 +1314,6 @@ void renderLoop(struct VkState* state){
         drawFrame(state);
     }
     vkDeviceWaitIdle(state->device);
-}
-
-void initImGuiDescriptorPool(struct VkState* state){
-    printf("[+] Creating ImGui Descriptor Pool\n");
-    VkDescriptorPoolSize uniformPS = {
-        .type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
-        .descriptorCount = state->MAX_FRAMES_IN_FLIGHT,
-    };
-
-    VkDescriptorPoolSize imagePS = {
-        .type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-        .descriptorCount = state->MAX_FRAMES_IN_FLIGHT,
-    };
-
-    VkDescriptorPoolSize samplerPS = {
-        .type = VK_DESCRIPTOR_TYPE_SAMPLER,
-        .descriptorCount = state->MAX_FRAMES_IN_FLIGHT
-    };
-
-    VkDescriptorPoolSize pS[] = {uniformPS, imagePS, samplerPS};
-    VkDescriptorPoolCreateInfo descriptorPoolCreateInfo = {
-        .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
-        .poolSizeCount = sizeof(pS)/sizeof(VkDescriptorPoolSize),
-        .pPoolSizes = pS,
-        .maxSets = state->MAX_FRAMES_IN_FLIGHT,
-        .flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT,
-    };
-
-    assert(vkCreateDescriptorPool(state->device, &descriptorPoolCreateInfo, NULL, &state->imguiState.descriptorPool) == VK_SUCCESS);
-}
-void initGui(struct VkState* state){
-    initImGuiDescriptorPool(state);
-    igCreateContext(NULL);
-    ImGuiIO * io = igGetIO_Nil();
-    io->IniFilename = NULL;
-    ImGui_ImplGlfw_InitForVulkan(state->window, true);
-    ImGui_ImplVulkan_InitInfo initInfo = {
-        .ApiVersion = VK_MAKE_VERSION(1, 0, 0),
-        .Instance = state->instance,
-        .PhysicalDevice = state->physicalDevice,
-        .Device = state->device,
-        .QueueFamily = state->queueFamilyIndices.graphicsFamily,
-        .Queue = state->graphicsQueue,
-        .DescriptorPool = state->imguiState.descriptorPool,
-        .ImageCount = state->imageCount,
-        .MinImageCount = state->MAX_FRAMES_IN_FLIGHT,
-        .MSAASamples = VK_SAMPLE_COUNT_1_BIT,
-        .RenderPass = state->renderPass,
-        .Subpass = 0,
-    };
-    ImGui_ImplVulkan_Init(&initInfo);
-    ImGuiStyle* style = igGetStyle();
-    setEngineStyle(style);
-
-    VkCommandBufferBeginInfo cbbi = {
-        .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
-        .flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT
-    };
-
-    VkSubmitInfo si = {
-        .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
-        .commandBufferCount = 1,
-        .pCommandBuffers = &state->imguiState.commandBuffer
-    };
-
-    VkCommandBufferAllocateInfo allocInfo = {
-        .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
-        .commandPool = state->transientPool,
-        .level = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
-        .commandBufferCount = 1,
-    };
-
-    assert(vkAllocateCommandBuffers(state->device, &allocInfo, &state->imguiState.commandBuffer) == VK_SUCCESS);
-
-    vkBeginCommandBuffer(state->imguiState.commandBuffer, &cbbi);
-    ImGui_ImplVulkan_NewFrame();
-    vkEndCommandBuffer(state->imguiState.commandBuffer);
-    vkQueueSubmit(state->graphicsQueue, 1, &si, VK_NULL_HANDLE);
-    vkQueueWaitIdle(state->graphicsQueue);
-    vkFreeCommandBuffers(state->device, state->transientPool, 1, &state->imguiState.commandBuffer);
 }
 
 int main(void){
