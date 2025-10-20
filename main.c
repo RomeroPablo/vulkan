@@ -17,7 +17,8 @@
 #define CIMGUI_USE_GLFW
 #include "external/cimgui.h"
 #include "external/cimgui_impl.h"
-#include "external/style.h"
+#include "external/ui.h"
+#include "assets/berkeley.h"
 
 struct Vertex {
     vec2 pos;
@@ -1203,6 +1204,11 @@ void initGui(struct VkState* state){
     };
     ImGui_ImplVulkan_Init(&initInfo);
     ImGuiStyle* style = igGetStyle();
+    ImFontConfig* fontConfig =  ImFontConfig_ImFontConfig();
+    fontConfig->FontDataOwnedByAtlas = false;
+    ImFont* berkeleyFont = ImFontAtlas_AddFontFromMemoryTTF(
+            io->Fonts, (void*)Berkeley_ttf, 
+            Berkeley_ttf_size, 18.0f, fontConfig, NULL);
     setEngineStyle(style);
     uploadUIData(state);
 }
@@ -1248,11 +1254,6 @@ void updateUniformBuffer(struct VkState* state, uint32_t currentImage){
     glm_mat4_copy(proj, ubo.proj);
     ubo.proj[1][1] *= -1;
     memcpy(state->objectState.uniformBuffersMapped[currentImage], &ubo, sizeof(ubo));
-}
-
-void constructUI(){
-    bool show = true;
-    igShowDemoWindow(&show);
 }
 
 void drawFrame(struct VkState* state){
@@ -1347,6 +1348,7 @@ int main(void){
     createCommandBuffers(&state);
     createSyncObjects(&state);
     initGui(&state);
+
     renderLoop(&state);
     cleanup(&state);
 }
