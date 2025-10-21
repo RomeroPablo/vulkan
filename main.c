@@ -19,6 +19,7 @@
 #include "external/cimgui.h"
 #include "external/cimgui_impl.h"
 #include "external/ui.h"
+#include "external/stb_image.h"
 #include "assets/berkeley.h"
 
 struct Vertex {
@@ -49,6 +50,8 @@ struct ObjectState {
     VkDescriptorSetLayout descriptorSetLayout;
     VkDescriptorPool descriptorPool;
     VkDescriptorSet* descriptorSets;
+    VkImage textureImage;
+    VkDeviceMemory textureImageMemory;
 };
 
 struct ImguiState{
@@ -856,6 +859,15 @@ void createCommandPool(struct VkState* state){
     assert(vkCreateCommandPool(state->device, &transientInfo, NULL, &state->transientPool) == VK_SUCCESS);
 }
 
+uint32_t findMemoryType(struct VkState* state, uint32_t typeFilter, VkMemoryPropertyFlags properties){
+    for(uint32_t i = 0; i < state->physicalMemoryProperties.memoryTypeCount; i++){
+        if((typeFilter & (1 << i))&&
+        (state->physicalMemoryProperties.memoryTypes[i].propertyFlags & properties) == properties)
+            return i;
+    }
+    return UINT32_MAX;
+}
+
 void createBuffer(struct VkState* state, 
         VkDeviceSize size,
         VkBufferUsageFlags usage,
@@ -875,21 +887,11 @@ void createBuffer(struct VkState* state,
 
     VkMemoryRequirements memRequirements;
     vkGetBufferMemoryRequirements(state->device, *buffer, &memRequirements);
-    uint32_t index = -1;
-    uint32_t typeFilter = memRequirements.memoryTypeBits;
-
-    for(uint32_t i = 0; i < state->physicalMemoryProperties.memoryTypeCount; i++){
-        if((typeFilter & (1 << i))
-        && (state->physicalMemoryProperties.memoryTypes[i].propertyFlags) == properties){
-            index = i;
-        }
-    }
-    assert(index != -1);
-
+    
     VkMemoryAllocateInfo allocInfo = {
         .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
         .allocationSize = memRequirements.size,
-        .memoryTypeIndex = index
+        .memoryTypeIndex = findMemoryType(state, memRequirements.memoryTypeBits, properties)
     };
 
     assert(vkAllocateMemory(state->device, &allocInfo, NULL, bufferMemory) == VK_SUCCESS);
@@ -931,6 +933,69 @@ void copyBuffer(struct VkState* state, VkBuffer src, VkBuffer dst, VkDeviceSize 
     vkQueueSubmit(state->graphicsQueue, 1, &submitInfo, VK_NULL_HANDLE);
     vkQueueWaitIdle(state->graphicsQueue);
     vkFreeCommandBuffers(state->device, state->transientPool, 1, &commandBuffer);
+}
+
+void createImage(struct VkState* state, uint32_t width, uint32_t height, VkFormat format,
+        VkImageTiling tiling, VkImageUsageFlags usage, VkMemoryPropertyFlags properties,
+        VkImage* image, VkDeviceMemory* imageMemory){
+    VkImageCreateInfo imageInfo = {
+        .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
+        .imageType = VK_IMAGE_TYPE_2D,
+        .extent.width = width,
+        .extent.height = height,
+        .extent.depth = 1,
+        .mipLevels = 1,
+        .arrayLayers = 1,
+        .format = format,
+        .tiling = tiling,
+        .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+        .usage = usage,
+        .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
+        .samples = VK_SAMPLE_COUNT_1_BIT,
+        .flags = 0,
+    };
+    assert(vkCreateImage(state->device, &imageInfo, NULL, image) == VK_SUCCESS);
+
+    VkMemoryRequirements memReqs;
+    vkGetImageMemoryRequirements(state->device, *image, &memReqs);
+    VkMemoryAllocateInfo allocInfo = {
+        .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
+        .allocationSize = memReqs.size,
+        .memoryTypeIndex = findMemoryType(state, memReqs.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT),
+    };
+    assert(vkAllocateMemory(state->device, &allocInfo, NULL, imageMemory) == VK_SUCCESS);
+    vkBindImageMemory(state->device, *image, *imageMemory, 0);
+}
+
+void createTextureImage(struct VkState* state){
+    int texWidth, texHeight, texChannels;
+    stbi_uc* pixels = stbi_load("assets/statue.jpg", &texWidth, &texHeight, &texChannels, STBI_rgb_alpha);
+    VkDeviceSize imageSize = texWidth * texHeight * 4;
+    if(!pixels){
+        printf("[!] Failed to load image\n");
+    }
+    printf("[+] Loaded %i x %i image\n", texWidth, texHeight);
+
+    VkBuffer stagingBuffer;
+    VkDeviceMemory stagingMemory;
+    createBuffer(state, imageSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, 
+            VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT 
+            | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, 
+            &stagingBuffer, &stagingMemory);
+    void* data;
+    vkMapMemory(state->device, stagingMemory, 0, imageSize, 0, &data);
+    memcpy(data, pixels, imageSize);
+    vkUnmapMemory(state->device, stagingMemory);
+    stbi_image_free(pixels);
+
+    createImage(state, texWidth, texHeight, 
+            VK_FORMAT_R8G8B8A8_UNORM, 
+            VK_IMAGE_TILING_OPTIMAL, VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, 
+            VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, 
+            &state->objectState.textureImage, &state->objectState.textureImageMemory);
+
+    vkDestroyBuffer(state->device, stagingBuffer, NULL);
+    vkFreeMemory(state->device, stagingMemory, NULL);
 }
 
 void createVertexBuffer(struct VkState* state){
@@ -1498,6 +1563,7 @@ int main(void){
     createGraphicsPipeline(&state);
     createFrameBuffers(&state);
     createCommandPool(&state);
+    createTextureImage(&state);
     createVertexBuffer(&state);
     createIndexBuffer(&state);
     createUniformBuffers(&state);
@@ -1546,6 +1612,9 @@ void cleanup(struct VkState* state){
 
     vkDestroyShaderModule(state->device, state->vertexShader, NULL);
     vkDestroyShaderModule(state->device, state->fragmentShader, NULL);
+
+    vkDestroyImage(state->device, state->objectState.textureImage, NULL);
+    vkFreeMemory(state->device, state->objectState.textureImageMemory, NULL);
 
     vkDestroyCommandPool(state->device, state->commandPool, NULL);
     vkDestroyCommandPool(state->device, state->transientPool, NULL);

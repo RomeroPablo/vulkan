@@ -38,6 +38,11 @@ else
     echo "using object cache..."
 fi
 
+if [ ! -f build/stb_image.o ]; then
+    echo "Building stb_image object..."
+    g++ "${CXXFLAGS[@]}" -c external/stb_image.cpp -o build/stb_image.o
+fi
+
 gcc -std=c17 -g -O3 -D_POSIX_C_SOURCE=199309L -Iexternal -Iexternal/imgui -c main.c -o build/main.o
 
 g++ build/*.o -lX11 -lglfw -lvulkan -ldl -lrt -lpthread -o vulkan
