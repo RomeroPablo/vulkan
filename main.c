@@ -1594,7 +1594,6 @@ void constructUI(VkState* state){
         float fps  = io->Framerate;
         float ms   = 1000.0f / (fps > 0.0f ? fps : 1.0f);
         igText("Frame: %.1f ms (%.1f FPS)", ms, fps);
-        igNewLine();
         igText("Hold Mouse 1 to use Camera");
     }
     igEnd();
