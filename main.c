@@ -23,6 +23,7 @@
 struct Vertex {
     vec2 pos;
     vec3 color;
+    vec2 texCoord;
 };
 
 struct UniformBufferObject{
@@ -594,10 +595,10 @@ void initObjectState(VkState* state){
     state->objectState.vertices = malloc(sizeof(struct Vertex) * state->objectState.vertexCount);
 
     struct Vertex vertTemp[] = {
-        {{-0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}},
-        {{ 0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}},
-        {{ 0.5f,  0.5f}, {0.0f, 0.0f, 1.0f}},
-        {{-0.5f,  0.5f}, {1.0f, 1.0f, 1.0f}},
+        {{-0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}, {1.0f, 0.0f}},
+        {{ 0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}, {0.0f, 0.0f}},
+        {{ 0.5f,  0.5f}, {0.0f, 0.0f, 1.0f}, {0.0f, 1.0f}},
+        {{-0.5f,  0.5f}, {1.0f, 1.0f, 1.0f}, {1.0f, 1.0f}},
     };
     memcpy(state->objectState.vertices, vertTemp, sizeof(vertTemp));
 
@@ -613,7 +614,7 @@ void initObjectState(VkState* state){
     state->objectState.bindingDescription.stride = sizeof(struct Vertex);
     state->objectState.bindingDescription.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
 
-    state->objectState.attributeDescriptions = malloc(2*sizeof(VkVertexInputAttributeDescription));
+    state->objectState.attributeDescriptions = malloc(3*sizeof(VkVertexInputAttributeDescription));
     state->objectState.attributeDescriptions[0].binding = 0;
     state->objectState.attributeDescriptions[0].location = 0;
     state->objectState.attributeDescriptions[0].format = VK_FORMAT_R32G32_SFLOAT;
@@ -624,6 +625,10 @@ void initObjectState(VkState* state){
     state->objectState.attributeDescriptions[1].format = VK_FORMAT_R32G32B32_SFLOAT;
     state->objectState.attributeDescriptions[1].offset = offsetof(struct Vertex, color);
 
+    state->objectState.attributeDescriptions[2].binding = 0;
+    state->objectState.attributeDescriptions[2].location = 2;
+    state->objectState.attributeDescriptions[2].format = VK_FORMAT_R32G32_SFLOAT;
+    state->objectState.attributeDescriptions[2].offset = offsetof(struct Vertex, texCoord);
 }
 
 unsigned char * readFile(const char* filename, size_t* outSize){
@@ -675,17 +680,27 @@ void createShaders(VkState* state){
 
 void createDescriptorSetLayout(VkState* state){
     VkDescriptorSetLayoutBinding uboLayoutBinding = {
-        .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
-        .descriptorCount = 1,
         .binding = 0,
+        .descriptorCount = 1,
+        .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
         .stageFlags = VK_SHADER_STAGE_VERTEX_BIT,
         .pImmutableSamplers = NULL,
     };
 
+    VkDescriptorSetLayoutBinding samplerLayoutBinding = {
+        .binding = 1,
+        .descriptorCount = 1,
+        .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+        .stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT,
+        .pImmutableSamplers = NULL,
+    };
+
+    VkDescriptorSetLayoutBinding layoutBindings[] = { uboLayoutBinding, samplerLayoutBinding };
+
     VkDescriptorSetLayoutCreateInfo layoutInfo = {
         .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
-        .bindingCount = 1,
-        .pBindings = &uboLayoutBinding,
+        .bindingCount = sizeof(layoutBindings)/sizeof(VkDescriptorSetLayoutBinding),
+        .pBindings = layoutBindings,
     };
 
     assert(vkCreateDescriptorSetLayout(state->device, &layoutInfo, NULL, &state->objectState.descriptorSetLayout) == VK_SUCCESS);
@@ -724,7 +739,7 @@ void createGraphicsPipeline(VkState* state){
         .vertexBindingDescriptionCount = 1,
         .pVertexBindingDescriptions = &state->objectState.bindingDescription,
 
-        .vertexAttributeDescriptionCount = 2,
+        .vertexAttributeDescriptionCount = 3,
         .pVertexAttributeDescriptions = state->objectState.attributeDescriptions 
     };
 
@@ -1168,14 +1183,21 @@ void createUniformBuffers(VkState* state){
 }
 
 void createDescriptorPool(VkState* state){
-    VkDescriptorPoolSize descriptorPoolSize = {
+    VkDescriptorPoolSize uniformPoolSize = {
         .type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
         .descriptorCount = state->MAX_FRAMES_IN_FLIGHT
     };
+
+    VkDescriptorPoolSize samplerPoolSize = {
+        .type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+        .descriptorCount = state->MAX_FRAMES_IN_FLIGHT
+    };
+
+    VkDescriptorPoolSize descriptorPoolSizes[] = { uniformPoolSize, samplerPoolSize };
     VkDescriptorPoolCreateInfo descriptorPoolCreateInfo = {
         .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
-        .poolSizeCount = 1,
-        .pPoolSizes = &descriptorPoolSize,
+        .poolSizeCount = sizeof(descriptorPoolSizes)/sizeof(VkDescriptorPoolSize),
+        .pPoolSizes = descriptorPoolSizes,
         .maxSets = state->MAX_FRAMES_IN_FLIGHT,
         .flags = 0,
     };
@@ -1202,7 +1224,12 @@ void createDescriptorSets(VkState* state){
             .offset = 0,
             .range = sizeof(struct UniformBufferObject),
         };
-        VkWriteDescriptorSet descriptorWrite = {
+        VkDescriptorImageInfo imageInfo = {
+            .imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+            .imageView = state->objectState.textureImageView,
+            .sampler = state->objectState.textureSampler,
+        };
+        VkWriteDescriptorSet bufferDescriptorWrite = {
             .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
             .dstSet = state->objectState.descriptorSets[i],
             .dstBinding = 0,
@@ -1210,10 +1237,18 @@ void createDescriptorSets(VkState* state){
             .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
             .descriptorCount = 1,
             .pBufferInfo = &bufferInfo,
-            .pImageInfo = NULL,
-            .pTexelBufferView = NULL,
         };
-        vkUpdateDescriptorSets(state->device, 1, &descriptorWrite, 0, NULL);
+        VkWriteDescriptorSet imageDescriptorWrite = {
+            .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+            .dstSet = state->objectState.descriptorSets[i],
+            .dstBinding = 1,
+            .dstArrayElement = 0,
+            .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+            .descriptorCount = 1,
+            .pImageInfo = &imageInfo,
+        };
+        VkWriteDescriptorSet descriptorWrite[] = { bufferDescriptorWrite, imageDescriptorWrite };
+        vkUpdateDescriptorSets(state->device, sizeof(descriptorWrite)/sizeof(VkWriteDescriptorSet), descriptorWrite, 0, NULL);
     }
 }
 

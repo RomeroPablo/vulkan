@@ -121,3 +121,9 @@ This is all encapsulated with a Vulkan Instance Type, which exposes the Physical
    └───────────────────────┘                                                                                      
                                                                                                                   
 VkQueues are the interface that we will be using to submit work to the GPU and present images to the surface      
+
+Memory Transfer
+create a vkBuffer object with some size and some usage flags (e.g. using it as a transfer destination, holding vertex data, uniforms, video src...)
+you then find some memory on the gpu that is best suited for that usage (and meets the size req), you then bind them together
+if it is host visible, you can map a local pointer to it, any copies to that local pointer will also occur on the gpu.
+    e.g. vkmapmemory(vkdevicememory, void*) memcpy(void*, src)
