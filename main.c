@@ -18,6 +18,8 @@
 #include "external/cimgui_impl.h"
 #include "external/ui.h"
 #include "external/stb_image.h"
+#include "external/tinyobj_loader_c.h"
+#include "external/hash.h"
 #include "assets/berkeley.h"
 
 struct Vertex {
@@ -35,8 +37,8 @@ struct UniformBufferObject{
 struct ObjectState {
     struct Vertex* vertices;
     uint32_t vertexCount;
-    uint16_t* indices;
-    uint16_t indexCount;
+    uint32_t* indices;
+    uint32_t indexCount;
 
     VkVertexInputBindingDescription bindingDescription;
     VkVertexInputAttributeDescription* attributeDescriptions;
@@ -637,7 +639,89 @@ void createRenderPass(VkState* state){
     assert(vkCreateRenderPass(state->device, &renderPassInfo, NULL, &state->renderPass) == VK_SUCCESS);
 }
 
+static void tinyobj_file_reader(void *ctx, const char *filename, 
+        int is_mtl, const char *obj_filename, char **out_buf, size_t *out_len){
+    (void)ctx; (void)is_mtl;
+    (void)obj_filename;
+
+    FILE *f = fopen(filename, "rb");
+    if (!f) { *out_buf = NULL; *out_len = 0; return; }
+
+    fseek(f, 0, SEEK_END);
+    long size = ftell(f);
+    fseek(f, 0, SEEK_SET);
+
+    char *buffer = malloc((size_t)size + 1);
+    if (!buffer) { fclose(f); *out_buf = NULL; *out_len = 0; return; }
+    if (fread(buffer, 1, (size_t)size, f) != (size_t)size){ 
+        fclose(f);
+        free(buffer); *out_buf = NULL;
+        *out_len = 0; return;
+    }
+    buffer[size] = '\0';
+    fclose(f);
+
+    *out_buf = buffer;
+    *out_len = (size_t)size;
+}
+
+void loadModel(VkState* state){
+    tinyobj_attrib_t attrib;
+    tinyobj_shape_t* shapes = NULL;
+    tinyobj_material_t* materials = NULL;
+    size_t num_shapes = 0;
+    size_t num_materials = 0;
+
+    tinyobj_attrib_init(&attrib);
+    int ret = tinyobj_parse_obj(&attrib, &shapes, &num_shapes, &materials, &num_materials,
+            "assets/viking.obj", tinyobj_file_reader, NULL, TINYOBJ_FLAG_TRIANGULATE);
+    if(ret != TINYOBJ_SUCCESS){
+        tinyobj_attrib_free(&attrib);
+        tinyobj_shapes_free(shapes, num_shapes);
+        tinyobj_materials_free(materials, num_materials);
+        assert(0);
+    }
+
+    size_t vertex_count = attrib.num_faces;
+    state->objectState.vertexCount = (uint32_t)vertex_count;
+    state->objectState.indexCount = (uint32_t)vertex_count;
+    state->objectState.vertices = malloc(sizeof(struct Vertex) * vertex_count);
+    state->objectState.indices = malloc(sizeof(uint32_t) * vertex_count);
+
+    for(size_t i = 0; i < vertex_count; ++i){
+        tinyobj_vertex_index_t idx = attrib.faces[i];
+        struct Vertex vertex = {0};
+
+        if(idx.v_idx != TINYOBJ_INVALID_INDEX){
+            size_t base = (size_t)idx.v_idx * 3;
+            vertex.pos[0] = attrib.vertices[base + 0];
+            vertex.pos[1] = attrib.vertices[base + 1];
+            vertex.pos[2] = attrib.vertices[base + 2];
+        }
+
+        if(idx.vt_idx != TINYOBJ_INVALID_INDEX){
+            size_t base = (size_t)idx.vt_idx * 2;
+            vertex.texCoord[0] = attrib.texcoords[base + 0];
+            vertex.texCoord[1] = 1.0f - attrib.texcoords[base + 1];
+        }
+
+        vertex.color[0] = 1.0f;
+        vertex.color[1] = 1.0f;
+        vertex.color[2] = 1.0f;
+
+        state->objectState.vertices[i] = vertex;
+        state->objectState.indices[i] = (uint32_t)i;
+    }
+
+    tinyobj_attrib_free(&attrib);
+    tinyobj_shapes_free(shapes, num_shapes);
+    tinyobj_materials_free(materials, num_materials);
+}
+
 void initObjectState(VkState* state){
+    printf("[+] Creating Object State\n");
+    loadModel(state);
+/*
     struct Vertex vertTemp[] = {
         {{-0.5f, -0.5f,  0.0f}, {1.0f, 0.0f, 0.0f}, {1.0f, 0.0f}},
         {{ 0.5f, -0.5f,  0.0f}, {0.0f, 1.0f, 0.0f}, {0.0f, 0.0f}},
@@ -658,15 +742,18 @@ void initObjectState(VkState* state){
     state->objectState.vertices = malloc(sizeof(struct Vertex) * state->objectState.vertexCount);
     memcpy(state->objectState.vertices, vertTemp, sizeof(vertTemp));
 
-    uint16_t indices[] = {
+    uint32_t indices[] = {
         0, 1, 2, 2, 3, 0,
         4, 5, 6, 6, 7, 4,
         8, 9, 10, 10, 11, 8,
     };
-    state->objectState.indexCount = sizeof(indices)/sizeof(uint16_t);
+    state->objectState.indexCount = sizeof(indices)/sizeof(uint32_t);
     state->objectState.indices = malloc(sizeof(state->objectState.indices) * state->objectState.indexCount);
     memcpy(state->objectState.indices, indices, sizeof(indices));
+*/
 
+    printf("[+] Model Loaded\n");
+    printf("[+] Found %i Vertices and %i Indices\n", state->objectState.vertexCount, state->objectState.indexCount);
     state->objectState.bindingDescription.binding = 0;
     state->objectState.bindingDescription.stride = sizeof(struct Vertex);
     state->objectState.bindingDescription.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
@@ -1133,7 +1220,7 @@ void createImage(VkState* state, uint32_t width, uint32_t height, VkFormat forma
 
 void createTextureImage(VkState* state){
     int texWidth, texHeight, texChannels;
-    stbi_uc* pixels = stbi_load("assets/statue.jpg", &texWidth, &texHeight, &texChannels, STBI_rgb_alpha);
+    stbi_uc* pixels = stbi_load("assets/viking.png", &texWidth, &texHeight, &texChannels, STBI_rgb_alpha);
     VkDeviceSize imageSize = texWidth * texHeight * 4;
     if(!pixels){
         printf("[!] Failed to load image\n");
@@ -1237,7 +1324,7 @@ void createVertexBuffer(VkState* state){
 
 void createIndexBuffer(VkState* state){
     printf("[+] Creating Index Buffer\n");
-    VkDeviceSize bufferSize = sizeof(state->objectState.indices) * state->objectState.indexCount;
+    VkDeviceSize bufferSize = sizeof(*state->objectState.indices) * state->objectState.indexCount;
     VkBuffer stagingBuffer;
     VkDeviceMemory stagingBufferMemory;
     createBuffer(state, 
@@ -1404,7 +1491,7 @@ void recordCommandBuffer(VkState* state, VkCommandBuffer commandBuffer, uint32_t
     VkBuffer vertexBuffers[] = {state->objectState.vertexBuffer};
     VkDeviceSize offsets[] = {0};
     vkCmdBindVertexBuffers(commandBuffer, 0, 1, &state->objectState.vertexBuffer, offsets);
-    vkCmdBindIndexBuffer(commandBuffer, state->objectState.indexBuffer, 0, VK_INDEX_TYPE_UINT16);
+    vkCmdBindIndexBuffer(commandBuffer, state->objectState.indexBuffer, 0, VK_INDEX_TYPE_UINT32);
     vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, state->pipelineLayout, 
             0, 1, &state->objectState.descriptorSets[state->currentFrame], 0, NULL);
 

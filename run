@@ -1,11 +1,24 @@
 #!/bin/bash
 set -e
 
-rm -f vulkan build/main.o assets/vert.spv assets/frag.spv
+if [ "${1:-}" = "clean" ]; then
+    rm -rf build vulkan assets/vert.spv assets/frag.spv
+    exit 0
+fi
+
 mkdir -p build
 
-glslc assets/vertexShader.vert -o assets/vert.spv
-glslc assets/fragmentShader.frag -o assets/frag.spv
+compile_shader() {
+    local src=$1
+    local out=$2
+    if [ ! -f "$out" ] || [ "$src" -nt "$out" ]; then
+        echo "compiling shader: $src"
+        glslc "$src" -o "$out"
+    fi
+}
+
+compile_shader assets/vertexShader.vert assets/vert.spv
+compile_shader assets/fragmentShader.frag assets/frag.spv
 
 CXXFLAGS=(
   -std=c++17
@@ -16,35 +29,63 @@ CXXFLAGS=(
   -DCIMGUI_USE_VULKAN
 )
 
-if [ ! -f build/imgui_build_done ]; then
-    echo "Building ImGui/CImGui objects..."
-    SRCS=(
-      external/cimgui.cpp
-      external/cimgui_impl.cpp
-      external/imgui/imgui.cpp
-      external/imgui/imgui_draw.cpp
-      external/imgui/imgui_widgets.cpp
-      external/imgui/imgui_tables.cpp
-      external/imgui/imgui_demo.cpp
-      external/imgui_impl_glfw.cpp
-      external/imgui_impl_vulkan.cpp
-    )
-    for src in "${SRCS[@]}"; do
-        out="build/$(basename "${src%.cpp}.o")"
+CPP_SRCS=(
+  external/cimgui.cpp
+  external/cimgui_impl.cpp
+  external/imgui/imgui.cpp
+  external/imgui/imgui_draw.cpp
+  external/imgui/imgui_widgets.cpp
+  external/imgui/imgui_tables.cpp
+  external/imgui/imgui_demo.cpp
+  external/imgui_impl_glfw.cpp
+  external/imgui_impl_vulkan.cpp
+  external/stb_image.cpp
+)
+
+for src in "${CPP_SRCS[@]}"; do
+    out="build/$(basename "${src%.cpp}.o")"
+    if [ ! -f "$out" ] || [ "$src" -nt "$out" ]; then
+        echo "compiling C++: $src"
         g++ "${CXXFLAGS[@]}" -c "$src" -o "$out"
-    done
-    touch build/imgui_build_done
+    fi
+done
+
+C_SRCS=(
+  external/tinyobj_loader_c.c
+  external/hash.c
+)
+
+for src in "${C_SRCS[@]}"; do
+    out="build/$(basename "${src%.c}.o")"
+    if [ ! -f "$out" ] || [ "$src" -nt "$out" ]; then
+        echo "compiling C: $src"
+        g++ "${CXXFLAGS[@]}" -c "$src" -o "$out"
+    fi
+done
+
+MAIN_OUT=build/main.o
+if [ ! -f "$MAIN_OUT" ] || [ main.c -nt "$MAIN_OUT" ]; then
+    echo "compiling main.c"
+    gcc -std=c17 -g -O3 -D_POSIX_C_SOURCE=199309L -Iexternal -Iexternal/imgui -c main.c -o "$MAIN_OUT"
+fi
+
+objects=(build/*.o)
+needs_link=0
+
+if [ ! -f vulkan ]; then
+    needs_link=1
 else
-    echo "using object cache..."
+    for obj in "${objects[@]}"; do
+        if [ "$obj" -nt vulkan ]; then
+            needs_link=1
+            break
+        fi
+    done
 fi
 
-if [ ! -f build/stb_image.o ]; then
-    echo "Building stb_image object..."
-    g++ "${CXXFLAGS[@]}" -c external/stb_image.cpp -o build/stb_image.o
+if [ "$needs_link" -eq 1 ]; then
+    echo "linking"
+    g++ "${objects[@]}" -lX11 -lglfw -lvulkan -ldl -lrt -lpthread -o vulkan
 fi
-
-gcc -std=c17 -g -O3 -D_POSIX_C_SOURCE=199309L -Iexternal -Iexternal/imgui -c main.c -o build/main.o
-
-g++ build/*.o -lX11 -lglfw -lvulkan -ldl -lrt -lpthread -o vulkan
 
 ./vulkan
