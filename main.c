@@ -409,8 +409,10 @@ void createLogicalDevice(VkState* state){
     const char * enabledExtensions[] = { VK_KHR_SWAPCHAIN_EXTENSION_NAME, };
     uint32_t enabledExtensionCount = 1;
 
-    VkPhysicalDeviceFeatures enabledFeatures = {0};
-    enabledFeatures.samplerAnisotropy = VK_TRUE;
+    VkPhysicalDeviceFeatures enabledFeatures = {
+        .samplerAnisotropy = VK_TRUE,
+        .sampleRateShading = VK_TRUE,
+    };
 
     VkDeviceCreateInfo createInfo = {
         .sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
@@ -954,8 +956,8 @@ void createGraphicsPipeline(VkState* state){
 
     VkPipelineMultisampleStateCreateInfo multisampling = {
         .sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO,
-        .sampleShadingEnable = VK_FALSE,
         .rasterizationSamples = state->msaaSamples,
+        .sampleShadingEnable = VK_FALSE,
         .minSampleShading = 1.0f,
         .pSampleMask = NULL,
         .alphaToCoverageEnable = VK_FALSE,
