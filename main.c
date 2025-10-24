@@ -145,6 +145,10 @@ struct VkState{
     bool framebufferResized;
     double lastFrameTime;
     float deltaTime;
+    VkSampleCountFlagBits msaaSamples;
+    VkImage colorImage;
+    VkDeviceMemory colorImageMemory;
+    VkImageView colorImageView;
 
     struct Camera camera;
     struct ObjectState objectState;
@@ -321,6 +325,18 @@ void createInstance(VkState* state){
     assert(result == VK_SUCCESS);
 }
 
+VkSampleCountFlagBits getMaxUsableSampleCount(VkPhysicalDeviceProperties* props){
+    VkSampleCountFlags counts = props->limits.framebufferColorSampleCounts & 
+                                props->limits.framebufferDepthSampleCounts;
+    if(counts & VK_SAMPLE_COUNT_64_BIT) return VK_SAMPLE_COUNT_64_BIT;
+    if(counts & VK_SAMPLE_COUNT_32_BIT) return VK_SAMPLE_COUNT_32_BIT;
+    if(counts & VK_SAMPLE_COUNT_16_BIT) return VK_SAMPLE_COUNT_16_BIT;
+    if(counts & VK_SAMPLE_COUNT_8_BIT) return VK_SAMPLE_COUNT_8_BIT;
+    if(counts & VK_SAMPLE_COUNT_4_BIT) return VK_SAMPLE_COUNT_4_BIT;
+    if(counts & VK_SAMPLE_COUNT_2_BIT) return VK_SAMPLE_COUNT_2_BIT;
+    return VK_SAMPLE_COUNT_1_BIT;
+}
+
 void pickPhysicalDevice(VkState* state){
     printf("[+] Picking Physical Device\n");
     uint32_t deviceCount = 0;
@@ -335,6 +351,9 @@ void pickPhysicalDevice(VkState* state){
     vkGetPhysicalDeviceFeatures(state->physicalDevice, &state->physicalDeviceFeatures);
 
     vkGetPhysicalDeviceMemoryProperties(state->physicalDevice, &state->physicalMemoryProperties);
+
+    state->msaaSamples = getMaxUsableSampleCount(&state->physicalDeviceProperties);
+
     free(devices);
 }
 
@@ -579,13 +598,13 @@ void createRenderPass(VkState* state){
     printf("[+] Creating Render Pass\n");
     VkAttachmentDescription colorAttachment = {
         .format = state->surfaceInfo.surfaceFormat.format,
-        .samples = VK_SAMPLE_COUNT_1_BIT,
+        .samples = state->msaaSamples,
         .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
         .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
         .stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
         .stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
         .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
-        .finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR
+        .finalLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
     };
 
     VkAttachmentReference colorAttachmentRef = {
@@ -595,7 +614,7 @@ void createRenderPass(VkState* state){
 
     VkAttachmentDescription depthAttachment = {
         .format = findDepthFormat(state),
-        .samples = VK_SAMPLE_COUNT_1_BIT,
+        .samples = state->msaaSamples,
         .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
         .storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
         .stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
@@ -607,6 +626,22 @@ void createRenderPass(VkState* state){
     VkAttachmentReference depthAttachmentRef = {
         .attachment = 1,
         .layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
+    };
+
+    VkAttachmentDescription colorAttachmentResolve = {
+        .format = state->surfaceInfo.surfaceFormat.format,
+        .samples = VK_SAMPLE_COUNT_1_BIT,
+        .loadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
+        .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
+        .stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
+        .stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
+        .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+        .finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
+    };
+
+    VkAttachmentReference colorAttachmentResolveRef = {
+        .attachment = 2,
+        .layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
     };
 
     VkSubpassDependency dependency = {
@@ -626,9 +661,10 @@ void createRenderPass(VkState* state){
         .colorAttachmentCount = 1,
         .pColorAttachments = &colorAttachmentRef,
         .pDepthStencilAttachment = &depthAttachmentRef,
+        .pResolveAttachments = &colorAttachmentResolveRef,
     };
 
-    VkAttachmentDescription attachments[] = {colorAttachment, depthAttachment};
+    VkAttachmentDescription attachments[] = {colorAttachment, depthAttachment, colorAttachmentResolve};
 
     VkRenderPassCreateInfo renderPassInfo = {
         .sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO,
@@ -919,7 +955,7 @@ void createGraphicsPipeline(VkState* state){
     VkPipelineMultisampleStateCreateInfo multisampling = {
         .sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO,
         .sampleShadingEnable = VK_FALSE,
-        .rasterizationSamples = VK_SAMPLE_COUNT_1_BIT,
+        .rasterizationSamples = state->msaaSamples,
         .minSampleShading = 1.0f,
         .pSampleMask = NULL,
         .alphaToCoverageEnable = VK_FALSE,
@@ -1004,8 +1040,9 @@ void createFrameBuffers(VkState* state){
     state->swapchainFramebuffers = malloc(state->imageCount * sizeof(VkFramebuffer));
     for(size_t i = 0; i < state->imageCount; i++){
         VkImageView attachments[] = {
+            state->colorImageView,
+            state->objectState.depthImageView,
             state->swapchainImageViews[i],
-            state->objectState.depthImageView
         };
 
         VkFramebufferCreateInfo framebufferInfo = {
@@ -1015,7 +1052,7 @@ void createFrameBuffers(VkState* state){
             .pAttachments = attachments,
             .width = state->extent.width,
             .height = state->extent.height,
-            .layers = 1
+            .layers = 1,
         };
         assert(vkCreateFramebuffer(state->device, &framebufferInfo, NULL, &state->swapchainFramebuffers[i]) == VK_SUCCESS);
     }
@@ -1190,8 +1227,8 @@ void transitionImageLayout(VkState* state, VkImage image, VkFormat format, VkIma
     endSingleTimeCommands(state, commandBuffer);
 };
 
-void createImage(VkState* state, uint32_t width, uint32_t height, uint32_t mipLevels, VkFormat format,
-        VkImageTiling tiling, VkImageUsageFlags usage, VkMemoryPropertyFlags properties,
+void createImage(VkState* state, uint32_t width, uint32_t height, uint32_t mipLevels, VkSampleCountFlagBits numSamples,
+        VkFormat format, VkImageTiling tiling, VkImageUsageFlags usage, VkMemoryPropertyFlags properties,
         VkImage* image, VkDeviceMemory* imageMemory){
     VkImageCreateInfo imageInfo = {
         .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
@@ -1206,7 +1243,7 @@ void createImage(VkState* state, uint32_t width, uint32_t height, uint32_t mipLe
         .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
         .usage = usage,
         .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
-        .samples = VK_SAMPLE_COUNT_1_BIT,
+        .samples = numSamples,
         .flags = 0,
     };
     assert(vkCreateImage(state->device, &imageInfo, NULL, image) == VK_SUCCESS);
@@ -1220,6 +1257,15 @@ void createImage(VkState* state, uint32_t width, uint32_t height, uint32_t mipLe
     };
     assert(vkAllocateMemory(state->device, &allocInfo, NULL, imageMemory) == VK_SUCCESS);
     vkBindImageMemory(state->device, *image, *imageMemory, 0);
+}
+
+void createColorResource(VkState* state){
+    VkFormat colorFormat = state->surfaceInfo.surfaceFormat.format;
+    createImage(state, state->surfaceInfo.capabilities.currentExtent.width, state->surfaceInfo.capabilities.currentExtent.height, 1,
+            state->msaaSamples, colorFormat, VK_IMAGE_TILING_OPTIMAL, 
+            VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT, 
+            VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, &state->colorImage, &state->colorImageMemory);
+    state->colorImageView = createImageView(state, state->colorImage, colorFormat, VK_IMAGE_ASPECT_COLOR_BIT, 1);
 }
 
 void generateMipmaps(VkState* state, VkImage image, VkFormat imageFormat, int32_t texWidth, int32_t texHeight, uint32_t mipLevels){
@@ -1313,7 +1359,7 @@ void createTextureImage(VkState* state){
     vkUnmapMemory(state->device, stagingMemory);
     stbi_image_free(pixels);
 
-    createImage(state, texWidth, texHeight, state->objectState.mipLevels,
+    createImage(state, texWidth, texHeight, state->objectState.mipLevels, VK_SAMPLE_COUNT_1_BIT,
             VK_FORMAT_R8G8B8A8_UNORM, 
             VK_IMAGE_TILING_OPTIMAL, 
             VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, 
@@ -1364,7 +1410,7 @@ void createDepthResource(VkState* state){
     printf("[+] Creating Depth Resource\n");
     VkFormat depthFormat = findDepthFormat(state);
     createImage(state, state->surfaceInfo.capabilities.currentExtent.width, state->surfaceInfo.capabilities.currentExtent.height, 1,
-            depthFormat, VK_IMAGE_TILING_OPTIMAL, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, 
+            state->msaaSamples, depthFormat, VK_IMAGE_TILING_OPTIMAL, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, 
             &state->objectState.depthImage, &state->objectState.depthImageMemory);
     state->objectState.depthImageView = createImageView(state, state->objectState.depthImage, depthFormat, VK_IMAGE_ASPECT_DEPTH_BIT, 1);
 
@@ -1611,6 +1657,10 @@ void cleanupSwapchain(VkState* state){
     vkDestroyImage(state->device, state->objectState.depthImage, NULL);
     vkFreeMemory(state->device, state->objectState.depthImageMemory, NULL);
 
+    vkDestroyImageView(state->device, state->colorImageView, NULL);
+    vkDestroyImage(state->device, state->colorImage, NULL);
+    vkFreeMemory(state->device, state->colorImageMemory, NULL);
+
     vkDestroySwapchainKHR(state->device, state->swapchain, NULL);
     destroyRenderFinishedSemaphores(state);
     free(state->swapchainFramebuffers); state->swapchainFramebuffers = NULL;
@@ -1631,6 +1681,7 @@ void recreateSwapChain(VkState* state){
     createSwapChain(state);
     ImGui_ImplVulkan_SetMinImageCount(state->MAX_FRAMES_IN_FLIGHT);
     createImageViews(state);
+    createColorResource(state);
     createDepthResource(state);
     createFrameBuffers(state);
 }
@@ -1705,7 +1756,7 @@ void initGui(VkState* state){
         .DescriptorPool = state->imguiState.descriptorPool,
         .ImageCount = state->imageCount,
         .MinImageCount = state->MAX_FRAMES_IN_FLIGHT,
-        .MSAASamples = VK_SAMPLE_COUNT_1_BIT,
+        .MSAASamples = state->msaaSamples,
         .RenderPass = state->renderPass,
         .Subpass = 0,
     };
@@ -1965,6 +2016,7 @@ int main(void){
     createDescriptorSetLayout(&state);
     createGraphicsPipeline(&state);
     createCommandPool(&state);
+    createColorResource(&state);
     createDepthResource(&state);
     createFrameBuffers(&state);
     createTextureImage(&state);
