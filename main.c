@@ -18,144 +18,11 @@
 #define CIMGUI_USE_GLFW
 #include "external/cimgui.h"
 #include "external/cimgui_impl.h"
-#include "external/ui.h"
 #include "external/stb_image.h"
 #include "external/tinyobj_loader_c.h"
-#include "external/hash.h"
 #include "assets/berkeley.h"
-
-struct Vertex {
-    vec3 pos;
-    vec3 color;
-    vec2 texCoord;
-};
-
-struct UniformBufferObject{
-    mat4 model;
-    mat4 view;
-    mat4 proj;
-};
-
-struct ObjectState {
-    struct Vertex* vertices;
-    uint32_t vertexCount;
-    uint32_t* indices;
-    uint32_t indexCount;
-
-    VkVertexInputBindingDescription bindingDescription;
-    VkVertexInputAttributeDescription* attributeDescriptions;
-
-    VkBuffer vertexBuffer;
-    VkDeviceMemory vertexBufferMemory;
-
-    VkBuffer indexBuffer;
-    VkDeviceMemory indexBufferMemory;
-
-    VkBuffer* uniformBuffers;
-    VkDeviceMemory* uniformBuffersMemory;
-    void** uniformBuffersMapped;
-
-    VkDescriptorSet* descriptorSets;
-    VkDescriptorSetLayout descriptorSetLayout;
-    VkDescriptorPool descriptorPool;
-
-    VkImage textureImage;
-    VkImageView textureImageView;
-    VkDeviceMemory textureImageMemory;
-    VkSampler textureSampler;
-
-    VkImage depthImage;
-    VkImageView depthImageView;
-    VkDeviceMemory depthImageMemory;
-
-    uint32_t mipLevels;
-};
-
-struct ImguiState{
-    VkDescriptorPool descriptorPool;
-    VkCommandPool commandPool;
-    VkCommandBuffer commandBuffer;
-};
-
-struct Camera{
-    vec3 position;
-    vec3 front;
-    vec3 up;
-    vec3 right;
-    float yaw;
-    float pitch;
-    float moveSpeed;
-    float mouseSensitivity;
-    bool firstMouse;
-    double lastX;
-    double lastY;
-    bool mouseCaptured;
-};
-
-struct VkState{
-    struct Resolution{
-        uint32_t width;
-        uint32_t height;
-    }resolution;
-    GLFWwindow* window;
-    VkInstance instance;
-    VkPhysicalDevice physicalDevice;
-    VkPhysicalDeviceProperties physicalDeviceProperties;
-    VkPhysicalDeviceFeatures physicalDeviceFeatures;
-    VkPhysicalDeviceMemoryProperties physicalMemoryProperties;
-    VkQueueFamilyProperties* queueFamilyProperties;
-    uint32_t queueFamilyCount;
-    float queuePriority;
-    struct QueueFamilyIndices{
-        uint32_t graphicsFamily;
-        uint32_t computeFamily;
-    }queueFamilyIndices;
-    struct QueueCount{
-        uint32_t graphics;
-        uint32_t compute;
-    }queueCount;
-    VkDevice device;
-    VkQueue graphicsQueue;
-    VkQueue computeQueue;
-    VkSurfaceKHR surface;
-    struct surfaceInfo{
-        VkSurfaceCapabilitiesKHR capabilities;
-        VkSurfaceFormatKHR surfaceFormat;
-        VkPresentModeKHR presentMode;
-    }surfaceInfo;
-    VkExtent2D extent;
-    uint32_t imageCount;
-    VkSwapchainKHR swapchain;
-    VkImage* swapchainImages;
-    VkImageView* swapchainImageViews;
-    VkShaderModule vertexShader;
-    VkShaderModule fragmentShader;
-    VkRenderPass renderPass;
-    VkPipelineLayout pipelineLayout;
-    VkPipeline graphicsPipeline;
-    VkFramebuffer* swapchainFramebuffers;
-    VkCommandPool transientPool;
-    VkCommandPool commandPool;
-    VkCommandBuffer* commandBuffers;
-    VkSemaphore* imageAvailableSemaphores;
-    VkSemaphore* renderFinishedSemaphores;
-    VkFence* inFlightFences;
-    uint32_t MAX_FRAMES_IN_FLIGHT;
-    uint32_t currentFrame;
-    bool framebufferResized;
-    double lastFrameTime;
-    float deltaTime;
-    VkSampleCountFlagBits msaaSamples;
-    VkImage colorImage;
-    VkDeviceMemory colorImageMemory;
-    VkImageView colorImageView;
-
-    struct Camera camera;
-    struct ObjectState objectState;
-    struct ImguiState imguiState;
-
-    VkDebugUtilsMessengerEXT debugMessenger;
-}typedef VkState;
+#include "external/ui.h"
+#include "external/state.h"
 
 void cleanup(VkState* state);
 
@@ -241,12 +108,14 @@ static void frameBufferResizeCallback(GLFWwindow* window, int width, int height)
 void initWindow(VkState* state){
     printf("[+] Initializing Window\n");
     glfwInit();
-    state->resolution.width  = 800;
-    state->resolution.height = 600;
+    GLFWmonitor *monitor = glfwGetPrimaryMonitor();
+    int width, height, xpos, ypos;
+    glfwGetMonitorWorkarea(monitor, &xpos, &ypos, &width, &height);
+    width  = width / 2 ;
+    height = height / 2;
     glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
     glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE);
-    state->window = glfwCreateWindow(state->resolution.width, 
-            state->resolution.height, "Vulkan", NULL, NULL);
+    state->window = glfwCreateWindow(width, height, "Vulkan", NULL, NULL);
     glfwSetWindowUserPointer(state->window, state);
     glfwSetFramebufferSizeCallback(state->window, frameBufferResizeCallback);
     assert(state->window);
@@ -852,11 +721,11 @@ VkShaderModule createShaderModule(unsigned char * code, size_t size, VkState* st
 void createShaders(VkState* state){
     printf("[+] Creating Shaders\n");
     size_t size;
-    unsigned char * vertexShaderSPV = readFile("assets/vert.spv", &size);
+    unsigned char * vertexShaderSPV = readFile("build/vert.spv", &size);
     printf("[+] read size %lu\n",size);
     state->vertexShader = createShaderModule(vertexShaderSPV, size, state);
 
-    unsigned char * fragmentShaderSPV = readFile("assets/frag.spv", &size);
+    unsigned char * fragmentShaderSPV = readFile("build/frag.spv", &size);
     printf("[+] read size %lu\n",size);
     state->fragmentShader = createShaderModule(fragmentShaderSPV, size, state);
 
@@ -1705,11 +1574,11 @@ void initImGuiDescriptorPool(VkState* state){
         .descriptorCount = state->MAX_FRAMES_IN_FLIGHT
     };
 
-    VkDescriptorPoolSize pS[] = {uniformPS, imagePS, samplerPS};
+    VkDescriptorPoolSize poolSize[] = {uniformPS, imagePS, samplerPS};
     VkDescriptorPoolCreateInfo descriptorPoolCreateInfo = {
         .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
-        .poolSizeCount = sizeof(pS)/sizeof(VkDescriptorPoolSize),
-        .pPoolSizes = pS,
+        .poolSizeCount = sizeof(poolSize)/sizeof(VkDescriptorPoolSize),
+        .pPoolSizes = poolSize,
         .maxSets = state->MAX_FRAMES_IN_FLIGHT,
         .flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT,
     };
@@ -1768,23 +1637,15 @@ void initGui(VkState* state){
     fontConfig->FontDataOwnedByAtlas = false;
     ImFont* berkeleyFont = ImFontAtlas_AddFontFromMemoryTTF(
             io->Fonts, (void*)Berkeley_ttf, 
-            Berkeley_ttf_size, 18.0f, fontConfig, NULL);
+            Berkeley_ttf_size, 16.0f, fontConfig, NULL);
     setEngineStyle(style);
     uploadUIData(state);
+    updateMemoryProperties(&state->imguiState, &state->physicalMemoryProperties);
 }
 
 void updateUniformBuffer(VkState* state, uint32_t currentImage){
     static struct timespec start = {0};
     struct timespec current;
-
-    if (start.tv_sec == 0 && start.tv_nsec == 0)
-        clock_gettime(CLOCK_MONOTONIC, &start);
-
-    clock_gettime(CLOCK_MONOTONIC, &current);
-
-    double deltaTime =
-        (current.tv_sec - start.tv_sec) +
-        (current.tv_nsec - start.tv_nsec) / 1e9;
 
     struct UniformBufferObject ubo = {
         .model = {0},
@@ -1793,7 +1654,7 @@ void updateUniformBuffer(VkState* state, uint32_t currentImage){
     };
 
     mat4 model; glm_mat4_identity(model);
-    float angle = glm_rad(90.0f) * 1.0;//deltaTime;
+    float angle = glm_rad(90.0f) * 1.0;;
     float* axis = (vec3){0.0f, 0.0f, 1.0f};
     glm_rotate(model, angle, axis);
     glm_mat4_copy(model, ubo.model);
@@ -1901,29 +1762,17 @@ void updateCamera(VkState* state){
         state->camera.position[2] -= velocity;
 }
 
-void constructUI(VkState* state){
-    static bool open = true;
+void buildUI(VkState* state){
+    static bool render = true;
+    static int prevKey = GLFW_RELEASE;
+    int curKey = glfwGetKey(state->window, GLFW_KEY_R);
+    if(curKey == GLFW_RELEASE & prevKey == GLFW_PRESS) render = !render;
+    prevKey = curKey;
     ImGuiIO* io = igGetIO_Nil();
-    //igShowDemoWindow(&open);
-
-    igSetNextWindowPos((ImVec2){10.0f, 10.0f}, ImGuiCond_Always, (ImVec2){0.0f, 0.0f});
-    igSetNextWindowBgAlpha(0.35f);
-    ImGuiWindowFlags flags = 
-        ImGuiWindowFlags_NoBackground | 
-        ImGuiWindowFlags_NoDecoration |
-        ImGuiWindowFlags_AlwaysAutoResize |
-        ImGuiWindowFlags_NoSavedSettings |
-        ImGuiWindowFlags_NoFocusOnAppearing |
-        ImGuiWindowFlags_NoNav |
-        ImGuiWindowFlags_NoMove;
-
-    if (igBegin("MetricsOverlay", NULL, flags)) {
-        float fps  = io->Framerate;
-        float ms   = 1000.0f / (fps > 0.0f ? fps : 1.0f);
-        igText("Frame: %.1f ms (%.1f FPS)", ms, fps);
-        igText("Hold Mouse 1 to use Camera");
+    topLeft(io, render);
+    if(render){
+        staticInfo(state, io);
     }
-    igEnd();
 }
 
 void drawFrame(VkState* state){
@@ -1945,7 +1794,7 @@ void drawFrame(VkState* state){
     ImGui_ImplGlfw_NewFrame();
     ImGui_ImplVulkan_NewFrame();
     igNewFrame();
-    constructUI(state);
+    buildUI(state);
     igRender();
     ImDrawData* drawData = igGetDrawData();
 

@@ -2,7 +2,7 @@
 set -e
 
 if [ "${1:-}" = "clean" ]; then
-    rm -rf build vulkan assets/vert.spv assets/frag.spv
+    rm -rf build vulkan
     exit 0
 fi
 
@@ -17,8 +17,8 @@ compile_shader() {
     fi
 }
 
-compile_shader assets/vertexShader.vert assets/vert.spv
-compile_shader assets/fragmentShader.frag assets/frag.spv
+compile_shader assets/vertexShader.vert build/vert.spv
+compile_shader assets/fragmentShader.frag build/frag.spv
 
 CXXFLAGS=(
   -std=c++17
@@ -64,7 +64,7 @@ for src in "${C_SRCS[@]}"; do
 done
 
 MAIN_OUT=build/main.o
-if [ ! -f "$MAIN_OUT" ] || [ main.c -nt "$MAIN_OUT" ]; then
+if [ ! -f "$MAIN_OUT" ] || [ main.c -nt "$MAIN_OUT" ] || [ external/ui.h -nt "$MAIN_OUT" ] || [ external/state.h -nt "$MAIN_OUT" ]; then
     echo "compiling main.c"
     gcc -std=c17 -g -O3 -D_POSIX_C_SOURCE=199309L -Iexternal -Iexternal/imgui -c main.c -o "$MAIN_OUT"
 fi
