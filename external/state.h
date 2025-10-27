@@ -3,17 +3,18 @@
 #include <vulkan/vulkan.h>
 #include <GLFW/glfw3.h>
 
-struct vkMemType{
-    const char* flagStrings[];
+struct vkGranularMem{
+    size_t flagCount;
+    const char* flagStrings[9];
 };
 struct vkHeap{
-    size_t size;
+    size_t heapSize;
 
     size_t flagCount;
     const char* flagStrings[3];
 
-    size_t memTypeCount;
-    struct vkMemType* memTypes;
+    size_t granularMemCount;
+    struct vkGranularMem** granularMemories;
 
 };
 struct PhysicalMemoryProperties{

@@ -4,10 +4,10 @@
 #define CIMGUI_USE_GLFW
 #include <vulkan/vulkan.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include "cimgui.h"
 #include "state.h"
-
 
 static inline void setEngineStyle(ImGuiStyle* style){
     style->Colors[ImGuiCol_ChildBg]           		= (ImVec4){0.0f, 0.0f, 0.0f, 0.9f};
@@ -75,6 +75,22 @@ static inline void topLeft(ImGuiIO* io, bool render){
     igEnd();
 }
 
+static inline size_t extractHeapFlags(VkMemoryHeapFlags flags,
+        const char* outStrings[],
+        size_t maxCount){
+    size_t count = 0;
+    if ((flags & VK_MEMORY_HEAP_DEVICE_LOCAL_BIT) && count < maxCount)
+        outStrings[count++] = "DEVICE_LOCAL";
+    if ((flags & VK_MEMORY_HEAP_MULTI_INSTANCE_BIT ) && count < maxCount)
+        outStrings[count++] = "MULTI_INSTANCE";
+    if ((flags & VK_MEMORY_HEAP_TILE_MEMORY_BIT_QCOM ) && count < maxCount)
+        outStrings[count++] = "TILE_MEMORY_QCOM";
+    if((flags == 0) && count < maxCount){
+        outStrings[count++] = "NO_HEAP_FLAGS";
+    }
+    return count;
+}
+
 static inline size_t vkGetMemoryPropertyFlagStrings(
     VkMemoryPropertyFlags flags,
     const char* outStrings[],
@@ -102,96 +118,53 @@ static inline size_t vkGetMemoryPropertyFlagStrings(
     return count;
 }
 
-/*
- * given vkphysicaldevicememoryprops we should
- * for i < memoryheapcount
- * memoryheaps[i] <- extract size of the heap and flags of the heap
- *
- * for i < memorytypecount
- * memorytypes[i] <- extract heap index and flags of the memory
- *
- * really, we only have to do this once
- * we should store it in a hierarchy
- *
- * memHierarchy{
- *  heap_t heaps[] {
- *         memoryflags
- *         memoryflags
- *         memoryflags
- *         ...
- *  }
- * }
- */
-
-static inline size_t extractHeapFlags(VkMemoryHeapFlags flags,
-        const char* outStrings[],
-        size_t maxCount){
-    size_t count = 0;
-    if ((flags & VK_MEMORY_HEAP_DEVICE_LOCAL_BIT) && count < maxCount)
-        outStrings[count++] = "DEVICE_LOCAL";
-    if ((flags & VK_MEMORY_HEAP_MULTI_INSTANCE_BIT ) && count < maxCount)
-        outStrings[count++] = "MULTI_INSTANCE";
-    if ((flags & VK_MEMORY_HEAP_TILE_MEMORY_BIT_QCOM ) && count < maxCount)
-        outStrings[count++] = "TILE_MEMORY_QCOM";
-    if((flags == 0) && count < maxCount){
-        outStrings[count++] = "NO_HEAP_FLAGS";
-    }
-    return count;
-}
-
 // this is only going to run once, so perf not too important (though it may hurt ttff)
-void static inline updateMemoryProperties(ImguiState* state, VkPhysicalDeviceMemoryProperties* props){
+static inline void updateMemoryProperties(ImguiState* state, const VkPhysicalDeviceMemoryProperties* props){
     state->physicalMemory.heapCount = props->memoryHeapCount;
-    state->physicalMemory.heaps = (struct vkHeap*)malloc(sizeof(struct vkHeap) * props->memoryHeapCount);
-    for(int i = 0; i < props->memoryHeapCount; i++){
-        state->physicalMemory.heaps[i].size = props->memoryHeaps[i].size;
-        state->physicalMemory.heaps[i].flagCount = 
-            extractHeapFlags(props->memoryHeaps[i].flags, state->physicalMemory.heaps[i].flagStrings, 3);
+    state->physicalMemory.heaps = (struct vkHeap*) calloc(state->physicalMemory.heapCount, sizeof(struct vkHeap));
+
+    for (uint32_t i = 0; i < props->memoryHeapCount; ++i) {
+        struct vkHeap* heap = &state->physicalMemory.heaps[i];
+
+        heap->heapSize = props->memoryHeaps[i].size;
+        heap->flagCount = extractHeapFlags(props->memoryHeaps[i].flags, heap->flagStrings, 3);
+
+        heap->granularMemories = (struct vkGranularMem**)calloc(props->memoryTypeCount, sizeof(struct vkGranularMem*));
+        heap->granularMemCount = 0;
+
+    for (uint32_t j = 0; j < props->memoryTypeCount; ++j) {
+        if (props->memoryTypes[j].heapIndex != i) continue;
+
+        heap->granularMemories[heap->granularMemCount] = (struct vkGranularMem*)calloc(1, sizeof(struct vkGranularMem));
+        heap->granularMemories[heap->granularMemCount]->flagCount = vkGetMemoryPropertyFlagStrings(props->memoryTypes[j].propertyFlags, heap->granularMemories[heap->granularMemCount]->flagStrings, 9);
+        heap->granularMemCount++;
+        }
     }
 }
 
-// how should we draw it?
-// for every memory heap
-// print out the size, and its memory subsets
 void static inline drawMemoryProperties(ImguiState* state){
-    for(int i = 0; i < state->physicalMemory.heapCount; i++){
-        igText("Heap %i:", i);
-        igText("Size %.2f MB:", (float)state->physicalMemory.heaps[i].size / (1024 * 1024 ));
-        for(int j = 0; j < state->physicalMemory.heaps[i].flagCount; j++){
-            igText("Flags %s", state->physicalMemory.heaps[i].flagStrings[j]);
-        };
-    }
-}
-
-void static inline draw_memory_properties_ui(VkPhysicalDeviceMemoryProperties* props)
-{
-    igText("Memory Heaps: %u", props->memoryHeapCount);
-    for (uint32_t i = 0; i < props->memoryHeapCount; i++) {
-        igBulletText("Heap %u: size = %.2f MB, flags = 0x%08x",
-                     i,
-                     (float)props->memoryHeaps[i].size / (1024.0f * 1024.0f),
-                     props->memoryHeaps[i].flags);
-    }
-
-    igSeparator();
-    igText("Memory Types: %u", props->memoryTypeCount);
-
-    for (uint32_t i = 0; i < props->memoryTypeCount; i++) {
-        const char* flagStrings[9];
-        size_t flagCount = vkGetMemoryPropertyFlagStrings(
-            props->memoryTypes[i].propertyFlags, flagStrings, 9);
-
-        char buffer[256] = {0};
-        for (size_t j = 0; j < flagCount; j++) {
-            strcat(buffer, flagStrings[j]);
-            if (j + 1 < flagCount)
-                strcat(buffer, " | ");
+    for (int i = 0; i < state->physicalMemory.heapCount; i++) {
+        struct vkHeap* heap = &state->physicalMemory.heaps[i];
+        igSeparator();
+        igText("Heap %d | Size %.2f MB |", i, (float)heap->heapSize / (1024 * 1024));
+        igSameLine(0.0f, -1.0f);
+        for (int j = 0; j < heap->flagCount; j++) {
+            igSameLine(0.0f, -1.0f);
+            igText("[%s]", heap->flagStrings[j]);
         }
 
-        igBulletText("Type %u: heap %u  [%s]",
-                     i,
-                     props->memoryTypes[i].heapIndex,
-                     buffer[0] ? buffer : "None");
+        char label[64];
+        snprintf(label, sizeof(label),"Memory Types##%d", i);
+        if (igTreeNode_Str(label)) {
+            for (int j = 0; j < heap->granularMemCount; j++) {
+                for (int k = 0; k < heap->granularMemories[j]->flagCount; k++) {
+                    igText("[%s]", heap->granularMemories[j]->flagStrings[k]);
+                    igSameLine(0.0f, -1.0f);
+                }
+                igNewLine();
+            }
+            igTreePop();
+        }
     }
 }
 
@@ -206,7 +179,6 @@ static inline void staticInfo(VkState* state, ImGuiIO* io){
     if(igBegin("StaticUtils", NULL, flags)){
         igText("Physical Device Name: %s", state->physicalDeviceProperties.deviceName);
         igText("Device ID: %i API: %u.%u.%u", state->physicalDeviceProperties.deviceID, VK_API_VERSION_MAJOR(apiVersion), VK_API_VERSION_MINOR(apiVersion), VK_API_VERSION_PATCH(apiVersion));
-        draw_memory_properties_ui(&state->physicalMemoryProperties);
         drawMemoryProperties(&state->imguiState);
     }
     igEnd();
