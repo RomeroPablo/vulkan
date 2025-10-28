@@ -1,4 +1,5 @@
 #pragma once
+#include <GLFW/glfw3.h>
 #define CIMGUI_DEFINE_ENUMS_AND_STRUCTS
 #define CIMGUI_USE_VULKAN
 #define CIMGUI_USE_GLFW
@@ -8,6 +9,16 @@
 #include <string.h>
 #include "cimgui.h"
 #include "state.h"
+
+#define KEY_TOGGLE(window, key) ({ \
+    static bool UNIQUE_cond_##__LINE__ = false; \
+    static int UNIQUE_prev_##__LINE__ = GLFW_RELEASE; \
+    int cur = glfwGetKey(window, key); \
+    if (cur == GLFW_RELEASE && UNIQUE_prev_##__LINE__ == GLFW_PRESS) \
+        UNIQUE_cond_##__LINE__ = !UNIQUE_cond_##__LINE__; \
+    UNIQUE_prev_##__LINE__ = cur; \
+    UNIQUE_cond_##__LINE__; \
+})
 
 static inline void setEngineStyle(ImGuiStyle* style){
     style->Colors[ImGuiCol_ChildBg]           		= (ImVec4){0.0f, 0.0f, 0.0f, 0.9f};
@@ -50,7 +61,7 @@ static inline void setEngineStyle(ImGuiStyle* style){
     style->Colors[ImGuiCol_DockingEmptyBg]    		= (ImVec4){0.0f, 0.0f, 0.0f, 0.0f};
 }
 
-static inline void topLeft(ImGuiIO* io, bool render){
+static inline void metricsUI(ImGuiIO* io, bool render){
     igSetNextWindowPos((ImVec2){io->DisplaySize.x - 270.0f, 10.0f}, ImGuiCond_Always, (ImVec2){0.0f, 0.0f});
     igSetNextWindowBgAlpha(0.35f);
     ImGuiWindowFlags flags = 
@@ -119,7 +130,7 @@ static inline size_t vkGetMemoryPropertyFlagStrings(
 }
 
 // this is only going to run once, so perf not too important (though it may hurt ttff)
-static inline void updateMemoryProperties(ImguiState* state, const VkPhysicalDeviceMemoryProperties* props){
+static inline void uiUpdateMemoryProperties(ImguiState* state, const VkPhysicalDeviceMemoryProperties* props){
     state->physicalMemory.heapCount = props->memoryHeapCount;
     state->physicalMemory.heaps = (struct vkHeap*) calloc(state->physicalMemory.heapCount, sizeof(struct vkHeap));
 
@@ -142,7 +153,7 @@ static inline void updateMemoryProperties(ImguiState* state, const VkPhysicalDev
     }
 }
 
-void static inline drawMemoryProperties(ImguiState* state){
+void static inline uiDrawMemoryProperties(ImguiState* state){
     for (int i = 0; i < state->physicalMemory.heapCount; i++) {
         struct vkHeap* heap = &state->physicalMemory.heaps[i];
         igSeparator();
@@ -168,7 +179,7 @@ void static inline drawMemoryProperties(ImguiState* state){
     }
 }
 
-static inline void staticInfo(VkState* state, ImGuiIO* io){
+static inline void uiStaticInfo(VkState* state, ImGuiIO* io){
     igSetNextWindowPos((ImVec2){0.0f, 0.0f}, ImGuiCond_Always, (ImVec2){0.0f, 0.0f});
     ImGuiWindowFlags flags = ImGuiWindowFlags_NoMove |
                              ImGuiWindowFlags_AlwaysAutoResize |
@@ -178,8 +189,46 @@ static inline void staticInfo(VkState* state, ImGuiIO* io){
     size_t count;
     if(igBegin("StaticUtils", NULL, flags)){
         igText("Physical Device Name: %s", state->physicalDeviceProperties.deviceName);
-        igText("Device ID: %i API: %u.%u.%u", state->physicalDeviceProperties.deviceID, VK_API_VERSION_MAJOR(apiVersion), VK_API_VERSION_MINOR(apiVersion), VK_API_VERSION_PATCH(apiVersion));
-        drawMemoryProperties(&state->imguiState);
-    }
-    igEnd();
+        igText("Device ID: %i API: %u.%u.%u", state->physicalDeviceProperties.deviceID, 
+                VK_API_VERSION_MAJOR(apiVersion), VK_API_VERSION_MINOR(apiVersion), VK_API_VERSION_PATCH(apiVersion));
+        uiDrawMemoryProperties(&state->imguiState);
+    } igEnd();
+}
+
+static inline void uiGraphicsPipelineSelection(VkState* state){
+    const char* list[] = { "Polygon Mode Fill", "Polygon Mode Line" };
+    size_t listSize = sizeof(list)/sizeof(list[0]);
+    ImGuiWindowFlags flags = ImGuiWindowFlags_NoMove |
+                             ImGuiWindowFlags_NoDecoration |
+                             ImGuiWindowFlags_AlwaysAutoResize;
+
+    ImGuiWindow* prev = igFindWindowByName("StaticUtils");
+    ImVec2 prevPos = prev->Pos;
+    ImVec2 prevSize = prev->Size;
+
+    igSetNextWindowPos((ImVec2){0.0f, prevPos.y + prevSize.y}, ImGuiCond_Always, (ImVec2){0.0f, 0.0f});
+    if(igBegin("pickGraphicsPipe", NULL, flags)){
+        igText("Graphics Pipeline");
+        igCombo_Str_arr("##pipeline dropdown", &state->imguiState.graphicsPipelineIndex, list, listSize, listSize);
+    } igEnd();
+}
+
+static inline void uiFragmentShaderSelection(VkState* state){
+    const char* list[] = { "Default Frag", "New Frag" };
+    size_t listSize = sizeof(list)/sizeof(list[0]);
+    ImGuiWindowFlags flags = ImGuiWindowFlags_NoMove |
+                             ImGuiWindowFlags_NoDecoration |
+                             ImGuiWindowFlags_AlwaysAutoResize;
+
+    ImGuiWindow* prev = igFindWindowByName("pickGraphicsPipe");
+    ImVec2 prevPos = prev->Pos;
+    ImVec2 prevSize = prev->Size;
+
+    igSetNextWindowPos((ImVec2){0.0f, prevPos.y + prevSize.y}, ImGuiCond_Always, (ImVec2){0.0f, 0.0f});
+    if(igBegin("pickFragShader", NULL, flags)){
+        igText("Fragment Shader");
+        igCombo_Str_arr("##fragmnet dropdown", &state->imguiState.fragmentShaderIndex, list, listSize, listSize);
+    } igEnd();
+
+
 }

@@ -12,6 +12,7 @@
 #include <stdlib.h>
 #include <time.h>
 #include <unistd.h>
+#include <float.h>
 
 #define CIMGUI_DEFINE_ENUMS_AND_STRUCTS
 #define CIMGUI_USE_VULKAN
@@ -278,9 +279,11 @@ void createLogicalDevice(VkState* state){
     const char * enabledExtensions[] = { VK_KHR_SWAPCHAIN_EXTENSION_NAME, };
     uint32_t enabledExtensionCount = 1;
 
+
     VkPhysicalDeviceFeatures enabledFeatures = {
         .samplerAnisotropy = VK_TRUE,
         .sampleRateShading = VK_TRUE,
+        .fillModeNonSolid = VK_TRUE,
     };
 
     VkDeviceCreateInfo createInfo = {
@@ -599,6 +602,9 @@ void loadModel(VkState* state){
     state->objectState.vertices = malloc(sizeof(struct Vertex) * vertex_count);
     state->objectState.indices = malloc(sizeof(uint32_t) * vertex_count);
 
+    float minPos[3] = {FLT_MAX, FLT_MAX, FLT_MAX};
+    float maxPos[3] = {-FLT_MAX, -FLT_MAX, -FLT_MAX};
+
     for(size_t i = 0; i < vertex_count; ++i){
         tinyobj_vertex_index_t idx = attrib.faces[i];
         struct Vertex vertex = {0};
@@ -608,6 +614,13 @@ void loadModel(VkState* state){
             vertex.pos[0] = attrib.vertices[base + 0];
             vertex.pos[1] = attrib.vertices[base + 1];
             vertex.pos[2] = attrib.vertices[base + 2];
+
+            if (vertex.pos[0] < minPos[0]) minPos[0] = vertex.pos[0];
+            if (vertex.pos[1] < minPos[1]) minPos[1] = vertex.pos[1];
+            if (vertex.pos[2] < minPos[2]) minPos[2] = vertex.pos[2];
+            if (vertex.pos[0] > maxPos[0]) maxPos[0] = vertex.pos[0];
+            if (vertex.pos[1] > maxPos[1]) maxPos[1] = vertex.pos[1];
+            if (vertex.pos[2] > maxPos[2]) maxPos[2] = vertex.pos[2];
         }
 
         if(idx.vt_idx != TINYOBJ_INVALID_INDEX){
@@ -622,6 +635,25 @@ void loadModel(VkState* state){
 
         state->objectState.vertices[i] = vertex;
         state->objectState.indices[i] = (uint32_t)i;
+    }
+
+    float center[3] = {
+        (minPos[0] + maxPos[0]) * 0.5f,
+        (minPos[1] + maxPos[1]) * 0.5f,
+        (minPos[2] + maxPos[2]) * 0.5f
+    };
+
+    float extentX = maxPos[0] - minPos[0];
+    float extentY = maxPos[1] - minPos[1];
+    float extentZ = maxPos[2] - minPos[2];
+    float maxExtent = fmaxf(fmaxf(extentX, extentY), extentZ);
+    float scale = maxExtent > 0.0f ? (1.0f / maxExtent) : 1.0f;
+
+    for (size_t i = 0; i < vertex_count; ++i) {
+        struct Vertex* vertex = &state->objectState.vertices[i];
+        vertex->pos[0] = (vertex->pos[0] - center[0]) * scale;
+        vertex->pos[1] = (vertex->pos[1] - center[1]) * scale;
+        vertex->pos[2] = (vertex->pos[2] - center[2]) * scale;
     }
 
     tinyobj_attrib_free(&attrib);
@@ -764,10 +796,10 @@ void createDescriptorSetLayout(VkState* state){
 void createGraphicsPipeline(VkState* state){
     printf("[+] Creating Graphics pipeline\n");
 
-    VkDynamicState dynamicStates[] = { VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR };
+    VkDynamicState dynamicStates[] = { VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR, };
     VkPipelineDynamicStateCreateInfo dynamicState = {
         .sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO,
-        .dynamicStateCount = 2,
+        .dynamicStateCount = sizeof(dynamicStates)/sizeof(VkDynamicState),
         .pDynamicStates = dynamicStates
     };
 
@@ -820,7 +852,7 @@ void createGraphicsPipeline(VkState* state){
         .depthBiasEnable = VK_FALSE,
         .depthBiasConstantFactor = 0.0f,
         .depthBiasClamp = 0.0f,
-        .depthBiasSlopeFactor = 0.0f
+        .depthBiasSlopeFactor = 0.0f,
     };
 
     VkPipelineMultisampleStateCreateInfo multisampling = {
@@ -902,6 +934,9 @@ void createGraphicsPipeline(VkState* state){
     };
 
     assert(vkCreateGraphicsPipelines(state->device, VK_NULL_HANDLE, 1, &pipelineInfo, NULL, &state->graphicsPipeline) == VK_SUCCESS);
+
+    rasterizer.polygonMode = VK_POLYGON_MODE_LINE;
+    assert(vkCreateGraphicsPipelines(state->device, VK_NULL_HANDLE, 1, &pipelineInfo, NULL, &state->graphicsPipelineLine) == VK_SUCCESS);
 }
 
 void createFrameBuffers(VkState* state){
@@ -1470,7 +1505,11 @@ void recordCommandBuffer(VkState* state, VkCommandBuffer commandBuffer, uint32_t
         .pClearValues = clearColor,
     };
     vkCmdBeginRenderPass(commandBuffer, &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
-    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, state->graphicsPipeline);
+    if(state->imguiState.graphicsPipelineIndex == 0)
+        vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, state->graphicsPipeline);
+    else{
+        vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, state->graphicsPipelineLine);
+    }
 
     VkViewport viewport = {
         .x = 0.0f,
@@ -1640,7 +1679,7 @@ void initGui(VkState* state){
             Berkeley_ttf_size, 16.0f, fontConfig, NULL);
     setEngineStyle(style);
     uploadUIData(state);
-    updateMemoryProperties(&state->imguiState, &state->physicalMemoryProperties);
+    uiUpdateMemoryProperties(&state->imguiState, &state->physicalMemoryProperties);
 }
 
 void updateUniformBuffer(VkState* state, uint32_t currentImage){
@@ -1668,7 +1707,7 @@ void updateUniformBuffer(VkState* state, uint32_t currentImage){
     mat4 proj;
     float fovy = glm_rad(45.0f);
     float aspect = (float)state->surfaceInfo.capabilities.currentExtent.width / (float)state->surfaceInfo.capabilities.currentExtent.height;
-    float nearZ = 0.1f;
+    float nearZ = 0.001f;
     float farZ = 10.0f;
     glm_perspective(fovy, aspect, nearZ, farZ, proj);
     glm_mat4_copy(proj, ubo.proj);
@@ -1764,14 +1803,14 @@ void updateCamera(VkState* state){
 
 void buildUI(VkState* state){
     static bool render = true;
-    static int prevKey = GLFW_RELEASE;
-    int curKey = glfwGetKey(state->window, GLFW_KEY_R);
-    if(curKey == GLFW_RELEASE & prevKey == GLFW_PRESS) render = !render;
-    prevKey = curKey;
+    render = KEY_TOGGLE(state->window, GLFW_KEY_R);
+
     ImGuiIO* io = igGetIO_Nil();
-    topLeft(io, render);
+    metricsUI(io, render);
     if(render){
-        staticInfo(state, io);
+        uiStaticInfo(state, io);
+        uiGraphicsPipelineSelection(state);
+        uiFragmentShaderSelection(state);
     }
 }
 
@@ -1904,6 +1943,7 @@ void cleanup(VkState* state){
 
     vkDestroyDescriptorSetLayout(state->device, state->objectState.descriptorSetLayout, NULL);
     vkDestroyPipeline(state->device, state->graphicsPipeline, NULL);
+    vkDestroyPipeline(state->device, state->graphicsPipelineLine, NULL);
     vkDestroyPipelineLayout(state->device, state->pipelineLayout, NULL);
 
     vkDestroyRenderPass(state->device, state->renderPass, NULL);

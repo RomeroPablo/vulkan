@@ -27,6 +27,8 @@ struct ImguiState{
     VkCommandPool commandPool;
     VkCommandBuffer commandBuffer;
     struct PhysicalMemoryProperties physicalMemory;
+    int graphicsPipelineIndex;
+    int fragmentShaderIndex;
 }typedef ImguiState;
 
 struct Vertex {
@@ -128,6 +130,7 @@ struct VkState{
     VkRenderPass renderPass;
     VkPipelineLayout pipelineLayout;
     VkPipeline graphicsPipeline;
+    VkPipeline graphicsPipelineLine;
     VkFramebuffer* swapchainFramebuffers;
     VkCommandPool transientPool;
     VkCommandPool commandPool;
