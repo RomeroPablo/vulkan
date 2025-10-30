@@ -125,8 +125,10 @@ struct VkState{
     VkSwapchainKHR swapchain;
     VkImage* swapchainImages;
     VkImageView* swapchainImageViews;
+    VkShaderModule computeShader;
     VkShaderModule vertexShader;
     VkShaderModule fragmentShader;
+    VkShaderModule newFragmentShader;
     VkRenderPass renderPass;
     VkPipelineLayout pipelineLayout;
     VkPipeline graphicsPipeline;
@@ -147,6 +149,10 @@ struct VkState{
     VkImage colorImage;
     VkDeviceMemory colorImageMemory;
     VkImageView colorImageView;
+
+    VkDeviceSize shaderStorageBufferSize;
+    VkBuffer* shaderStorageBuffers;
+    VkDeviceMemory* shaderStorageBuffersMemory;
 
     ImguiState imguiState;
 

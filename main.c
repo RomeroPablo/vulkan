@@ -239,7 +239,7 @@ void setupQueues(VkState* state){
                 state->queueCount.graphics = state->queueFamilyProperties[i].queueCount;
             }
         }
-        if((state->queueFamilyProperties[i].queueFlags & VK_QUEUE_COMPUTE_BIT)){
+        if((state->queueFamilyProperties[i].queueFlags & VK_QUEUE_COMPUTE_BIT && state->queueFamilyProperties[i].queueFlags & VK_QUEUE_GRAPHICS_BIT)){
             if(state->queueFamilyProperties[i].queueCount > state->queueCount.compute){
                 state->queueFamilyIndices.computeFamily = i;
                 state->queueCount.compute = state->queueFamilyProperties[i].queueCount;
@@ -588,7 +588,7 @@ void loadModel(VkState* state){
 
     tinyobj_attrib_init(&attrib);
     int ret = tinyobj_parse_obj(&attrib, &shapes, &num_shapes, &materials, &num_materials,
-            "assets/viking.obj", tinyobj_file_reader, NULL, TINYOBJ_FLAG_TRIANGULATE);
+            "assets/models/base.obj", tinyobj_file_reader, NULL, TINYOBJ_FLAG_TRIANGULATE);
     if(ret != TINYOBJ_SUCCESS){
         tinyobj_attrib_free(&attrib);
         tinyobj_shapes_free(shapes, num_shapes);
@@ -761,6 +761,10 @@ void createShaders(VkState* state){
     printf("[+] read size %lu\n",size);
     state->fragmentShader = createShaderModule(fragmentShaderSPV, size, state);
 
+    unsigned char * computeShaderSPV = readFile("build/comp.spv", &size);
+    printf("[+] read size %lu\n",size);
+    state->computeShader = createShaderModule(computeShaderSPV, size, state);
+
     free(vertexShaderSPV);
     free(fragmentShaderSPV);
 }
@@ -817,6 +821,14 @@ void createGraphicsPipeline(VkState* state){
         .module = state->fragmentShader,
         .pName = "main",
         .pSpecializationInfo = NULL
+    };
+
+    VkPipelineShaderStageCreateInfo compStageInfo = {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+        .stage = VK_SHADER_STAGE_COMPUTE_BIT,
+        .module = state->computeShader,
+        .pName = "main",
+        .pSpecializationInfo = NULL,
     };
 
     VkPipelineShaderStageCreateInfo shaderStages[] = {vertShaderStageInfo, fragShaderStageInfo};
@@ -1167,7 +1179,7 @@ void createImage(VkState* state, uint32_t width, uint32_t height, uint32_t mipLe
 
 void createColorResource(VkState* state){
     VkFormat colorFormat = state->surfaceInfo.surfaceFormat.format;
-    createImage(state, state->surfaceInfo.capabilities.currentExtent.width, state->surfaceInfo.capabilities.currentExtent.height, 1,
+    createImage(state, state->extent.width, state->extent.height, 1,
             state->msaaSamples, colorFormat, VK_IMAGE_TILING_OPTIMAL, 
             VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT, 
             VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, &state->colorImage, &state->colorImageMemory);
@@ -1244,7 +1256,7 @@ void generateMipmaps(VkState* state, VkImage image, VkFormat imageFormat, int32_
 
 void createTextureImage(VkState* state){
     int texWidth, texHeight, texChannels;
-    stbi_uc* pixels = stbi_load("assets/viking.png", &texWidth, &texHeight, &texChannels, STBI_rgb_alpha);
+    stbi_uc* pixels = stbi_load("assets/models/viking.png", &texWidth, &texHeight, &texChannels, STBI_rgb_alpha);
     VkDeviceSize imageSize = texWidth * texHeight * 4;
     if(!pixels){
         printf("[!] Failed to load image\n");
@@ -1315,7 +1327,7 @@ void createTextureSampler(VkState* state){
 void createDepthResource(VkState* state){
     printf("[+] Creating Depth Resource\n");
     VkFormat depthFormat = findDepthFormat(state);
-    createImage(state, state->surfaceInfo.capabilities.currentExtent.width, state->surfaceInfo.capabilities.currentExtent.height, 1,
+    createImage(state, state->extent.width, state->extent.height, 1,
             state->msaaSamples, depthFormat, VK_IMAGE_TILING_OPTIMAL, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, 
             &state->objectState.depthImage, &state->objectState.depthImageMemory);
     state->objectState.depthImageView = createImageView(state, state->objectState.depthImage, depthFormat, VK_IMAGE_ASPECT_DEPTH_BIT, 1);
@@ -1706,7 +1718,7 @@ void updateUniformBuffer(VkState* state, uint32_t currentImage){
 
     mat4 proj;
     float fovy = glm_rad(45.0f);
-    float aspect = (float)state->surfaceInfo.capabilities.currentExtent.width / (float)state->surfaceInfo.capabilities.currentExtent.height;
+    float aspect = (float)state->extent.width / (float)state->extent.height;
     float nearZ = 0.001f;
     float farZ = 10.0f;
     glm_perspective(fovy, aspect, nearZ, farZ, proj);
@@ -1883,6 +1895,19 @@ void renderLoop(VkState* state){
     vkDeviceWaitIdle(state->device);
 }
 
+void compKernel(VkState* state){
+    state->shaderStorageBuffers = malloc(state->MAX_FRAMES_IN_FLIGHT * sizeof(VkBuffer));
+    state->shaderStorageBuffersMemory = malloc(state->MAX_FRAMES_IN_FLIGHT * sizeof(VkDeviceMemory));
+    if(1 == 0)
+    for(int i = 0; i < state->MAX_FRAMES_IN_FLIGHT; i++){
+        createBuffer(state, state->shaderStorageBufferSize, 
+            VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, 
+            VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, 
+            &state->shaderStorageBuffers[i], &state->shaderStorageBuffersMemory[i]);
+    }
+
+};
+
 int main(void){
     printf("[+] Running Vulkan Program\n");
     VkState state;
@@ -1920,6 +1945,7 @@ int main(void){
     createCommandBuffers(&state);
     createSyncObjects(&state);
     initGui(&state);
+    compKernel(&state);
 
     renderLoop(&state);
     cleanup(&state);

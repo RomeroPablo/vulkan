@@ -12,5 +12,5 @@ void main(){
     vec3 bottom = vec3(0.0, 0.0, 1.0);
     vec3 color = mix(bottom, top, t);
     outColor = vec4(color, 1.0);
-    outColor = texture(texSampler, fragTexCoord);
+    //outColor = texture(texSampler, fragTexCoord);
 }

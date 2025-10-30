@@ -17,8 +17,9 @@ compile_shader() {
     fi
 }
 
-compile_shader assets/vertexShader.vert build/vert.spv
-compile_shader assets/fragmentShader.frag build/frag.spv
+compile_shader assets/vert/vertexShader.vert build/vert.spv
+compile_shader assets/frag/fragmentShader.frag build/frag.spv
+compile_shader assets/comp/computeShader.comp build/comp.spv
 
 CXXFLAGS=(
   -std=c++17
