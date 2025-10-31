@@ -37,6 +37,12 @@ struct Vertex {
     vec2 texCoord;
 };
 
+typedef struct {
+    vec2 position;
+    vec2 velocity;
+    vec4 color;
+} Particle;
+
 struct UniformBufferObject{
     mat4 model;
     mat4 view;

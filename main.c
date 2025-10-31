@@ -1895,15 +1895,48 @@ void renderLoop(VkState* state){
     vkDeviceWaitIdle(state->device);
 }
 
+float frand() {
+    return (float)rand() / (float)RAND_MAX;
+}
+
+#define PARTICLE_COUNT 1000
 void compKernel(VkState* state){
+    srand((unsigned)time(NULL));
+    Particle particles[PARTICLE_COUNT];
+
+    for (int i = 0; i < PARTICLE_COUNT; i++) {
+        float r = 0.25f * sqrtf(frand());
+        float theta = frand() * 2.0f * 3.14159265358979323846f;
+        float x = r * cosf(theta) * state->extent.height / state->extent.width ;
+        float y = r * sinf(theta);
+
+        glm_vec2_copy((vec2){x, y}, particles[i].position);
+
+        vec2 dir = {x, y};
+        glm_vec2_normalize(dir);
+        glm_vec2_scale(dir, 0.00025f, particles[i].velocity);
+
+        glm_vec4_copy((vec4){frand(), frand(), frand(), 1.0f}, particles[i].color);
+    }
+    state->shaderStorageBufferSize = sizeof(Particle) * PARTICLE_COUNT;
+    VkBuffer stagingBuffer;
+    VkDeviceMemory stagingBufferMemory;
+    createBuffer(state, state->shaderStorageBufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, 
+            VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, 
+            &stagingBuffer, &stagingBufferMemory);
+    void* data;
+    vkMapMemory(state->device, stagingBufferMemory, 0, state->shaderStorageBufferSize, 0, &data);
+    memcpy(data, particles, state->shaderStorageBufferSize);
+    vkUnmapMemory(state->device, stagingBufferMemory);
+
     state->shaderStorageBuffers = malloc(state->MAX_FRAMES_IN_FLIGHT * sizeof(VkBuffer));
     state->shaderStorageBuffersMemory = malloc(state->MAX_FRAMES_IN_FLIGHT * sizeof(VkDeviceMemory));
-    if(1 == 0)
     for(int i = 0; i < state->MAX_FRAMES_IN_FLIGHT; i++){
         createBuffer(state, state->shaderStorageBufferSize, 
             VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, 
             VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, 
             &state->shaderStorageBuffers[i], &state->shaderStorageBuffersMemory[i]);
+        copyBuffer(state, stagingBuffer, state->shaderStorageBuffers[i], state->shaderStorageBufferSize);
     }
 
 };
