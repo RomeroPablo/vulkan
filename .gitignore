@@ -1,6 +1,6 @@
 vulkan
 *.spv
 *.o
-build
+artifacts
 .cache
 imgui.ini

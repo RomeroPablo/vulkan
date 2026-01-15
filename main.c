@@ -753,15 +753,15 @@ VkShaderModule createShaderModule(unsigned char * code, size_t size, VkState* st
 void createShaders(VkState* state){
     printf("[+] Creating Shaders\n");
     size_t size;
-    unsigned char * vertexShaderSPV = readFile("build/vert.spv", &size);
+    unsigned char * vertexShaderSPV = readFile("artifacts/vert.spv", &size);
     printf("[+] read size %lu\n",size);
     state->vertexShader = createShaderModule(vertexShaderSPV, size, state);
 
-    unsigned char * fragmentShaderSPV = readFile("build/frag.spv", &size);
+    unsigned char * fragmentShaderSPV = readFile("artifacts/frag.spv", &size);
     printf("[+] read size %lu\n",size);
     state->fragmentShader = createShaderModule(fragmentShaderSPV, size, state);
 
-    unsigned char * computeShaderSPV = readFile("build/comp.spv", &size);
+    unsigned char * computeShaderSPV = readFile("artifacts/comp.spv", &size);
     printf("[+] read size %lu\n",size);
     state->computeShader = createShaderModule(computeShaderSPV, size, state);
 
