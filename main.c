@@ -130,16 +130,6 @@ void initCamera(VkState* state){
     state->camera.mouseSensitivity = 0.1f;
     state->camera.firstMouse = true;
     state->camera.mouseCaptured = false;
-
-    vec3 front = {
-        cosf(glm_rad(state->camera.pitch)) * cosf(glm_rad(state->camera.yaw)),
-        cosf(glm_rad(state->camera.pitch)) * sinf(glm_rad(state->camera.yaw)),
-        sinf(glm_rad(state->camera.pitch)),
-    };
-    glm_vec3_normalize_to(front, state->camera.front);
-    vec3 worldUp = {0.0f, 0.0f, 1.0f};
-    glm_vec3_crossn(state->camera.front, worldUp, state->camera.right);
-    glm_vec3_crossn(state->camera.right, state->camera.front, state->camera.up);
 }
 
 void createInstance(VkState* state){
@@ -1705,7 +1695,7 @@ void updateUniformBuffer(VkState* state, uint32_t currentImage){
     };
 
     mat4 model; glm_mat4_identity(model);
-    float angle = glm_rad(90.0f) * 1.0;;
+    float angle = glm_rad(90.0f) * 1.0;
     float* axis = (vec3){0.0f, 0.0f, 1.0f};
     glm_rotate(model, angle, axis);
     glm_mat4_copy(model, ubo.model);
@@ -1826,7 +1816,7 @@ void buildUI(VkState* state){
     }
 }
 
-void drawFrame(VkState* state){
+void processFrame(VkState* state){
     vkWaitForFences(state->device, 1, &state->inFlightFences[state->currentFrame], VK_TRUE, UINT64_MAX);
     uint32_t imageIndex;
     VkResult result = 
@@ -1837,10 +1827,10 @@ void drawFrame(VkState* state){
     double now = glfwGetTime();
     state->deltaTime = (float)(now - state->lastFrameTime);
     state->lastFrameTime = now;
-    if (state->deltaTime > 0.1f) state->deltaTime = 0.1f; // clamp after long pauses
+    if (state->deltaTime > 0.1f) state->deltaTime = 0.1f;
 
-    processMouseInput(state);
-    updateCamera(state);
+    processMouseInput(state); // grabs new pitch and yaw
+    updateCamera(state);      // camera operations
 
     ImGui_ImplGlfw_NewFrame();
     ImGui_ImplVulkan_NewFrame();
@@ -1851,7 +1841,7 @@ void drawFrame(VkState* state){
 
     vkResetFences(state->device, 1, &state->inFlightFences[state->currentFrame]);
     vkResetCommandBuffer(state->commandBuffers[state->currentFrame], 0);
-    updateUniformBuffer(state, state->currentFrame);
+    updateUniformBuffer(state, state->currentFrame); // builds model view projection from camera
     recordCommandBuffer(state, state->commandBuffers[state->currentFrame], imageIndex, drawData);
 
     VkPipelineStageFlags waitStages[] = {VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT};
@@ -1868,7 +1858,7 @@ void drawFrame(VkState* state){
 
     assert(vkQueueSubmit(state->graphicsQueue, 1, &submitInfo, state->inFlightFences[state->currentFrame]) == VK_SUCCESS);
 
-    VkPresentInfoKHR presentInfo = {
+    const VkPresentInfoKHR presentInfo = {
         .sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR,
         .waitSemaphoreCount = 1,
         .pWaitSemaphores = &state->renderFinishedSemaphores[imageIndex],
@@ -1890,12 +1880,12 @@ void renderLoop(VkState* state){
     state->lastFrameTime = glfwGetTime();
     while(!glfwWindowShouldClose(state->window)){
         glfwPollEvents();
-        drawFrame(state);
+        processFrame(state);
     }
     vkDeviceWaitIdle(state->device);
 }
 
-float frand() {
+inline float frand() {
     return (float)rand() / (float)RAND_MAX;
 }
 
@@ -1906,9 +1896,9 @@ void compKernel(VkState* state){
 
     for (int i = 0; i < PARTICLE_COUNT; i++) {
         float r = 0.25f * sqrtf(frand());
-        float theta = frand() * 2.0f * 3.14159265358979323846f;
-        float x = r * cosf(theta) * state->extent.height / state->extent.width ;
-        float y = r * sinf(theta);
+        float θ = frand() * 2.0f * 3.14159265358979323846f;
+        float x = r * cosf(θ) * state->extent.height / state->extent.width ;
+        float y = r * sinf(θ);
 
         glm_vec2_copy((vec2){x, y}, particles[i].position);
 
@@ -1981,6 +1971,7 @@ int main(void){
     compKernel(&state);
 
     renderLoop(&state);
+
     cleanup(&state);
 }
 
