@@ -138,7 +138,7 @@ struct VkState{
     VkRenderPass renderPass;
     VkPipelineLayout pipelineLayout;
     VkPipeline graphicsPipeline;
-    VkPipeline graphicsPipelineLine;
+    VkPipeline graphicsPipelinePolyLine;
     VkFramebuffer* swapchainFramebuffers;
     VkCommandPool transientPool;
     VkCommandPool commandPool;

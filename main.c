@@ -191,9 +191,9 @@ VkSampleCountFlagBits getMaxUsableSampleCount(VkPhysicalDeviceProperties* props)
     if(counts & VK_SAMPLE_COUNT_64_BIT) return VK_SAMPLE_COUNT_64_BIT;
     if(counts & VK_SAMPLE_COUNT_32_BIT) return VK_SAMPLE_COUNT_32_BIT;
     if(counts & VK_SAMPLE_COUNT_16_BIT) return VK_SAMPLE_COUNT_16_BIT;
-    if(counts & VK_SAMPLE_COUNT_8_BIT) return VK_SAMPLE_COUNT_8_BIT;
-    if(counts & VK_SAMPLE_COUNT_4_BIT) return VK_SAMPLE_COUNT_4_BIT;
-    if(counts & VK_SAMPLE_COUNT_2_BIT) return VK_SAMPLE_COUNT_2_BIT;
+    if(counts & VK_SAMPLE_COUNT_8_BIT)  return VK_SAMPLE_COUNT_8_BIT;
+    if(counts & VK_SAMPLE_COUNT_4_BIT)  return VK_SAMPLE_COUNT_4_BIT;
+    if(counts & VK_SAMPLE_COUNT_2_BIT)  return VK_SAMPLE_COUNT_2_BIT;
     return VK_SAMPLE_COUNT_1_BIT;
 }
 
@@ -520,7 +520,7 @@ void createRenderPass(VkState* state){
                          VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
     };
 
-    VkSubpassDescription subpass = {
+    VkSubpassDescription description = {
         .pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS,
         .colorAttachmentCount = 1,
         .pColorAttachments = &colorAttachmentRef,
@@ -535,7 +535,7 @@ void createRenderPass(VkState* state){
         .attachmentCount = sizeof(attachments)/sizeof(VkAttachmentDescription),
         .pAttachments = attachments,
         .subpassCount = 1,
-        .pSubpasses = &subpass,
+        .pSubpasses = &description,
         .dependencyCount = 1,
         .pDependencies = &dependency
     };
@@ -938,7 +938,7 @@ void createGraphicsPipeline(VkState* state){
     assert(vkCreateGraphicsPipelines(state->device, VK_NULL_HANDLE, 1, &pipelineInfo, NULL, &state->graphicsPipeline) == VK_SUCCESS);
 
     rasterizer.polygonMode = VK_POLYGON_MODE_LINE;
-    assert(vkCreateGraphicsPipelines(state->device, VK_NULL_HANDLE, 1, &pipelineInfo, NULL, &state->graphicsPipelineLine) == VK_SUCCESS);
+    assert(vkCreateGraphicsPipelines(state->device, VK_NULL_HANDLE, 1, &pipelineInfo, NULL, &state->graphicsPipelinePolyLine) == VK_SUCCESS);
 }
 
 void createFrameBuffers(VkState* state){
@@ -1510,7 +1510,7 @@ void recordCommandBuffer(VkState* state, VkCommandBuffer commandBuffer, uint32_t
     if(state->imguiState.graphicsPipelineIndex == 0)
         vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, state->graphicsPipeline);
     else{
-        vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, state->graphicsPipelineLine);
+        vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, state->graphicsPipelinePolyLine);
     }
 
     VkViewport viewport = {
@@ -1824,6 +1824,9 @@ void processFrame(VkState* state){
     if(result == VK_ERROR_OUT_OF_DATE_KHR){ recreateSwapChain(state); return;
     } else if ((result != VK_SUCCESS) && (result != VK_SUBOPTIMAL_KHR)){ assert(0); }
 
+    vkResetFences(state->device, 1, &state->inFlightFences[state->currentFrame]);
+    vkResetCommandBuffer(state->commandBuffers[state->currentFrame], 0);
+
     double now = glfwGetTime();
     state->deltaTime = (float)(now - state->lastFrameTime);
     state->lastFrameTime = now;
@@ -1839,8 +1842,6 @@ void processFrame(VkState* state){
     igRender();
     ImDrawData* drawData = igGetDrawData();
 
-    vkResetFences(state->device, 1, &state->inFlightFences[state->currentFrame]);
-    vkResetCommandBuffer(state->commandBuffers[state->currentFrame], 0);
     updateUniformBuffer(state, state->currentFrame); // builds model view projection from camera
     recordCommandBuffer(state, state->commandBuffers[state->currentFrame], imageIndex, drawData);
 
@@ -1938,25 +1939,31 @@ int main(void){
 
     initWindow(&state);
     initCamera(&state);
+
     createInstance(&state);
     if(checkValidationLayerSupport())
         setupDebugMessenger(&state);
+
     pickPhysicalDevice(&state);
     setupQueues(&state);
     createLogicalDevice(&state);
     retrieveQueues(&state);
+
     createSurface(&state);
     createSwapChain(&state);
     createImageViews(&state);
     createRenderPass(&state);
-    initObjectState(&state);
-    createShaders(&state);
-    createDescriptorSetLayout(&state);
-    createGraphicsPipeline(&state);
+
     createCommandPool(&state);
     createColorResource(&state);
     createDepthResource(&state);
     createFrameBuffers(&state);
+
+    initObjectState(&state);
+    createShaders(&state);
+    createDescriptorSetLayout(&state);
+    createGraphicsPipeline(&state);
+
     createTextureImage(&state);
     createTextureImageView(&state);
     createTextureSampler(&state);
@@ -1965,10 +1972,13 @@ int main(void){
     createUniformBuffers(&state);
     createDescriptorPool(&state);
     createDescriptorSets(&state);
+
     createCommandBuffers(&state);
     createSyncObjects(&state);
+
     initGui(&state);
-    compKernel(&state);
+
+    //compKernel(&state);
 
     renderLoop(&state);
 
@@ -1993,7 +2003,7 @@ void cleanup(VkState* state){
 
     vkDestroyDescriptorSetLayout(state->device, state->objectState.descriptorSetLayout, NULL);
     vkDestroyPipeline(state->device, state->graphicsPipeline, NULL);
-    vkDestroyPipeline(state->device, state->graphicsPipelineLine, NULL);
+    vkDestroyPipeline(state->device, state->graphicsPipelinePolyLine, NULL);
     vkDestroyPipelineLayout(state->device, state->pipelineLayout, NULL);
 
     vkDestroyRenderPass(state->device, state->renderPass, NULL);
@@ -2011,6 +2021,7 @@ void cleanup(VkState* state){
 
     vkDestroyShaderModule(state->device, state->vertexShader, NULL);
     vkDestroyShaderModule(state->device, state->fragmentShader, NULL);
+    vkDestroyShaderModule(state->device, state->computeShader, NULL);
 
     vkDestroySampler(state->device, state->objectState.textureSampler, NULL);
     vkDestroyImageView(state->device, state->objectState.textureImageView, NULL);
