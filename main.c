@@ -1856,7 +1856,6 @@ void processFrame(VkState* state){
         .signalSemaphoreCount = 1,
         .pSignalSemaphores = &state->renderFinishedSemaphores[imageIndex]
     };
-
     assert(vkQueueSubmit(state->graphicsQueue, 1, &submitInfo, state->inFlightFences[state->currentFrame]) == VK_SUCCESS);
 
     const VkPresentInfoKHR presentInfo = {
@@ -1868,8 +1867,8 @@ void processFrame(VkState* state){
         .pImageIndices = &imageIndex,
         .pResults = NULL
     };
-
     result = vkQueuePresentKHR(state->graphicsQueue, &presentInfo);
+
     if(result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR || state->framebufferResized){
         state->framebufferResized = false; recreateSwapChain(state);
     } else if (result != VK_SUCCESS){ assert(0); }
@@ -1944,20 +1943,20 @@ int main(void){
     if(checkValidationLayerSupport())
         setupDebugMessenger(&state);
 
-    pickPhysicalDevice(&state);
-    setupQueues(&state);
-    createLogicalDevice(&state);
-    retrieveQueues(&state);
+pickPhysicalDevice(&state);
+setupQueues(&state);
+createLogicalDevice(&state);
+retrieveQueues(&state);
 
-    createSurface(&state);
-    createSwapChain(&state);
-    createImageViews(&state);
-    createRenderPass(&state);
+createSurface(&state);
+createSwapChain(&state);
+createImageViews(&state);
+createRenderPass(&state);
 
-    createCommandPool(&state);
-    createColorResource(&state);
-    createDepthResource(&state);
-    createFrameBuffers(&state);
+createCommandPool(&state);
+createColorResource(&state);
+createDepthResource(&state);
+createFrameBuffers(&state);
 
     initObjectState(&state);
     createShaders(&state);
