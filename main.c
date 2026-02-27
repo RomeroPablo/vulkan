@@ -1943,20 +1943,20 @@ int main(void){
     if(checkValidationLayerSupport())
         setupDebugMessenger(&state);
 
-pickPhysicalDevice(&state);
-setupQueues(&state);
-createLogicalDevice(&state);
-retrieveQueues(&state);
+    pickPhysicalDevice(&state);
+    setupQueues(&state);
+    createLogicalDevice(&state);
+    retrieveQueues(&state);
 
-createSurface(&state);
-createSwapChain(&state);
-createImageViews(&state);
-createRenderPass(&state);
+    createSurface(&state);
+    createSwapChain(&state);
+    createImageViews(&state);
+    createRenderPass(&state);
 
-createCommandPool(&state);
-createColorResource(&state);
-createDepthResource(&state);
-createFrameBuffers(&state);
+    createCommandPool(&state);
+    createColorResource(&state);
+    createDepthResource(&state);
+    createFrameBuffers(&state);
 
     initObjectState(&state);
     createShaders(&state);
