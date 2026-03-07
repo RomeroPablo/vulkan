@@ -1801,6 +1801,7 @@ void updateCamera(VkState* state){
         state->camera.position[2] += velocity;
     if (glfwGetKey(state->window, GLFW_KEY_LEFT_CONTROL) == GLFW_PRESS)
         state->camera.position[2] -= velocity;
+
 }
 
 void buildUI(VkState* state){
@@ -1833,8 +1834,7 @@ void processFrame(VkState* state){
     if (state->deltaTime > 0.1f) state->deltaTime = 0.1f;
 
     processMouseInput(state); // grabs new pitch and yaw
-    updateCamera(state);      // camera operations
-
+    updateCamera(state);      // provides position, front, and up
     ImGui_ImplGlfw_NewFrame();
     ImGui_ImplVulkan_NewFrame();
     igNewFrame();
