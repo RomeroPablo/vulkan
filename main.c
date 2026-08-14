@@ -578,7 +578,7 @@ void loadModel(VkState* state){
 
     tinyobj_attrib_init(&attrib);
     int ret = tinyobj_parse_obj(&attrib, &shapes, &num_shapes, &materials, &num_materials,
-            "assets/models/base.obj", tinyobj_file_reader, NULL, TINYOBJ_FLAG_TRIANGULATE);
+            "assets/models/viking.obj", tinyobj_file_reader, NULL, TINYOBJ_FLAG_TRIANGULATE);
     if(ret != TINYOBJ_SUCCESS){
         tinyobj_attrib_free(&attrib);
         tinyobj_shapes_free(shapes, num_shapes);
@@ -743,15 +743,15 @@ VkShaderModule createShaderModule(unsigned char * code, size_t size, VkState* st
 void createShaders(VkState* state){
     printf("[+] Creating Shaders\n");
     size_t size;
-    unsigned char * vertexShaderSPV = readFile("artifacts/vert.spv", &size);
+    unsigned char * vertexShaderSPV = readFile(".artifacts/vert.spv", &size);
     printf("[+] read size %lu\n",size);
     state->vertexShader = createShaderModule(vertexShaderSPV, size, state);
 
-    unsigned char * fragmentShaderSPV = readFile("artifacts/frag.spv", &size);
+    unsigned char * fragmentShaderSPV = readFile(".artifacts/frag.spv", &size);
     printf("[+] read size %lu\n",size);
     state->fragmentShader = createShaderModule(fragmentShaderSPV, size, state);
 
-    unsigned char * computeShaderSPV = readFile("artifacts/comp.spv", &size);
+    unsigned char * computeShaderSPV = readFile(".artifacts/comp.spv", &size);
     printf("[+] read size %lu\n",size);
     state->computeShader = createShaderModule(computeShaderSPV, size, state);
 
