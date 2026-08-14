@@ -44,12 +44,8 @@ VkResult CreateDebugUtilsMessengerEXT(VkInstance instance,
     PFN_vkCreateDebugUtilsMessengerEXT func = 
         (PFN_vkCreateDebugUtilsMessengerEXT) 
             vkGetInstanceProcAddr(instance, "vkCreateDebugUtilsMessengerEXT");
-
-    if(func != NULL){
-        return func(instance, pCreateInfo, pAllocator, pDebugMessenger);
-    } else {
-        return VK_ERROR_EXTENSION_NOT_PRESENT;
-    }
+    if(func != NULL) return func(instance, pCreateInfo, pAllocator, pDebugMessenger);
+    else return VK_ERROR_EXTENSION_NOT_PRESENT;
 }
 
 void populateDebugMessengerCreateInfo(VkDebugUtilsMessengerCreateInfoEXT* createInfo){
@@ -79,7 +75,7 @@ void DestroyDebugUtilsMessengerEXT(VkInstance instance, VkDebugUtilsMessengerEXT
        (PFN_vkDestroyDebugUtilsMessengerEXT)
        vkGetInstanceProcAddr(instance, "vkDestroyDebugUtilsMessengerEXT");
 
-    if (func != NULL) { func(instance, debugMessenger, pAllocator); }
+    if(func != NULL) func(instance, debugMessenger, pAllocator);
 }
 
 bool checkValidationLayerSupport(){
@@ -115,7 +111,7 @@ void initWindow(VkState* state){
     width  = width / 2 ;
     height = height / 2;
     glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
-    glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE);
+    glfwWindowHint(GLFW_RESIZABLE, GLFW_TRUE);
     state->window = glfwCreateWindow(width, height, "Vulkan", NULL, NULL);
     glfwSetWindowUserPointer(state->window, state);
     glfwSetFramebufferSizeCallback(state->window, frameBufferResizeCallback);
@@ -149,15 +145,14 @@ void createInstance(VkState* state){
     vkEnumerateInstanceExtensionProperties(NULL, &extensionCount, NULL);
     VkExtensionProperties extensions[extensionCount];
     vkEnumerateInstanceExtensionProperties(NULL, &extensionCount, extensions);
-    for(uint32_t i = 0; i < extensionCount; i++){
+    for(uint32_t i = 0; i < extensionCount; i++)
         printf("[!] Found: %s \n", extensions[i].extensionName);
-    }
     uint32_t glfwExtensionsCount = 0;
     const char** glfwExtensions;
     glfwExtensions = glfwGetRequiredInstanceExtensions(&glfwExtensionsCount);
-    if (!glfwExtensions || glfwExtensionsCount == 0) {
+    if(!glfwExtensions || glfwExtensionsCount == 0)
         fprintf(stderr, "GLFW did not report required instance extensions\n");
-    }
+
     uint32_t enabledExtensionCount = glfwExtensionsCount + 1;
     const char* enabledExtensions[enabledExtensionCount];
     memcpy(enabledExtensions, glfwExtensions, sizeof(char*) * glfwExtensionsCount);
@@ -312,15 +307,11 @@ static inline int clamp(int input, int min, int max){
 }
 
 static void destroyRenderFinishedSemaphores(VkState* state){
-    if(state->renderFinishedSemaphores == NULL){
-        return;
-    }
+    if(state->renderFinishedSemaphores == NULL) return;
 
-    for(uint32_t i = 0; i < state->imageCount; i++){
-        if(state->renderFinishedSemaphores[i] != VK_NULL_HANDLE){
+    for(uint32_t i = 0; i < state->imageCount; i++)
+        if(state->renderFinishedSemaphores[i] != VK_NULL_HANDLE)
             vkDestroySemaphore(state->device, state->renderFinishedSemaphores[i], NULL);
-        }
-    }
 
     free(state->renderFinishedSemaphores);
     state->renderFinishedSemaphores = NULL;
@@ -328,9 +319,7 @@ static void destroyRenderFinishedSemaphores(VkState* state){
 
 static void createRenderFinishedSemaphores(VkState* state){
     assert(state->renderFinishedSemaphores == NULL);
-    if(state->imageCount == 0){
-        return;
-    }
+    if(state->imageCount == 0) return;
 
     state->renderFinishedSemaphores = malloc(state->imageCount * sizeof(VkSemaphore));
 
@@ -338,9 +327,8 @@ static void createRenderFinishedSemaphores(VkState* state){
         .sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO,
     };
 
-    for(uint32_t i = 0; i < state->imageCount; i++){
+    for(uint32_t i = 0; i < state->imageCount; i++)
         assert(vkCreateSemaphore(state->device, &semaphoreCreateInfo, NULL, &state->renderFinishedSemaphores[i]) == VK_SUCCESS);
-    }
 }
 
 void createSwapChain(VkState* state){
@@ -654,37 +642,6 @@ void loadModel(VkState* state){
 void initObjectState(VkState* state){
     printf("[+] Creating Object State\n");
     loadModel(state);
-/*
-    struct Vertex vertTemp[] = {
-        {{-0.5f, -0.5f,  0.0f}, {1.0f, 0.0f, 0.0f}, {1.0f, 0.0f}},
-        {{ 0.5f, -0.5f,  0.0f}, {0.0f, 1.0f, 0.0f}, {0.0f, 0.0f}},
-        {{ 0.5f,  0.5f,  0.0f}, {0.0f, 0.0f, 1.0f}, {0.0f, 1.0f}},
-        {{-0.5f,  0.5f,  0.0f}, {1.0f, 1.0f, 1.0f}, {1.0f, 1.0f}},
-
-        {{-0.5f, -0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}, {1.0f, 0.0f}},
-        {{ 0.5f, -0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}, {0.0f, 0.0f}},
-        {{ 0.5f,  0.5f, -0.5f}, {0.0f, 0.0f, 1.0f}, {0.0f, 1.0f}},
-        {{-0.5f,  0.5f, -0.5f}, {1.0f, 1.0f, 1.0f}, {1.0f, 1.0f}},
-
-        {{-0.5f, -0.5f,  0.5f}, {1.0f, 0.0f, 0.0f}, {1.0f, 0.0f}},
-        {{ 0.5f, -0.5f,  0.5f}, {0.0f, 1.0f, 0.0f}, {0.0f, 0.0f}},
-        {{ 0.5f,  0.5f,  0.5f}, {0.0f, 0.0f, 1.0f}, {0.0f, 1.0f}},
-        {{-0.5f,  0.5f,  0.5f}, {1.0f, 1.0f, 1.0f}, {1.0f, 1.0f}},
-    };
-    state->objectState.vertexCount = sizeof(vertTemp)/sizeof(struct Vertex);
-    state->objectState.vertices = malloc(sizeof(struct Vertex) * state->objectState.vertexCount);
-    memcpy(state->objectState.vertices, vertTemp, sizeof(vertTemp));
-
-    uint32_t indices[] = {
-        0, 1, 2, 2, 3, 0,
-        4, 5, 6, 6, 7, 4,
-        8, 9, 10, 10, 11, 8,
-    };
-    state->objectState.indexCount = sizeof(indices)/sizeof(uint32_t);
-    state->objectState.indices = malloc(sizeof(state->objectState.indices) * state->objectState.indexCount);
-    memcpy(state->objectState.indices, indices, sizeof(indices));
-*/
-
     printf("[+] Model Loaded\n");
     printf("[+] Found %i Vertices and %i Indices\n", state->objectState.vertexCount, state->objectState.indexCount);
     state->objectState.bindingDescription.binding = 0;
